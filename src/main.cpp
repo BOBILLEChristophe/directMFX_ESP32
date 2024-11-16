@@ -265,7 +265,7 @@ void setSID(byte idx)
   len += 7;
   //******************* adresse loco 7 derniers bits ******************* */
 
-  for (byte a = 0, b = 6; a < 7; a++, b--, len++)
+  for (byte a = 0, b = 6; a < 7; a++, b--)
     buff[++len] = loco[idx]->addr() & (1 << b) >> b;
 
   //******************* UID loco *************************************** */
