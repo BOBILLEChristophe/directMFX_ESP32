@@ -216,7 +216,7 @@ void addr0()
   len = 2 + 7;
 } // always 7 bit adr (buff[0] used for LENGTH)
 
-void addr(byte Loc)
+void addr(byte address)
 {
   /*
   2.2.4 Structure des trames de données
@@ -232,7 +232,7 @@ void addr(byte Loc)
   len = 2;
 
   for (byte a = 0, b = 6; a < 7; a++, b--) // 7 bits address
-    buff[++len] = Loc & (1 << b);
+    buff[++len] = address & (1 << b);
 }
 
 void setSID(byte idx)
