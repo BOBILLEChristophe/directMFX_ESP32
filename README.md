@@ -1,6 +1,8 @@
 # Centrale MFX
 
-Ce projet propose une centrale numérique **MFX** destinée à piloter des locomotives Märklin au format MFX. Conçue pour fonctionner sur une architecture ESP32, cette solution est une alternative compacte, performante et personnalisable pour les amateurs de modélisme ferroviaire.
+Ce projet propose une centrale numérique **MFX** destinée à piloter des locomotives Märklin au format MFX. Conçue pour fonctionner sur une architecture ESP32, cette solution est une alternative aux propositions commerciales.
+
+/!\ Il s'agit d'une version qui est en cours de développement mais qui est fonctionnelle.
 
 Ce sujet fait l'objet d'un fil sur le forum 3R : https://forum.3rails.fr/t/controler-vos-trains-mfx-depuis-un-arduino-due-sans-passer-par-la-gleisbox/27563
 
