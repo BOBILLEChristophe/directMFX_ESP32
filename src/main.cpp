@@ -192,7 +192,7 @@ void loop()
       case 'a':
         MFX::setPower(false);
         loopState = 1;
-        Serial.println("Power0FF ('m' to PowerOFF)");
+        Serial.println("Power0FF ('m' to PowerON)");
         break;
         //   case 'h': Serial.println("Speed:0-7  Robel:8  BLS:9  l:Light  d:Direction  t:Turn  s:Statistics"); break;
       }
