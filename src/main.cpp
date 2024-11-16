@@ -1,12 +1,7 @@
 // 8 oct 2024 from https://gelit.ch/Train/DirectMFX.ino
-// erreur avec ESP32 V3 - OK avec ESP32 V2.0.17
-// 9 oct : supprimer S88
-// 10 oct : Failed uploading: uploading error: exit status 2 - je n'arrive pas Ã  alimenter L293D depuis ma carte NodeMCU ESP32 30 pin
 
-// 31 mars 2022 : Demo code for 2 MFX locs, 1 Turn (Adr=5) & S88 (16 inputs)
-// MFX est une marque dÃƒÂ©posÃƒÂ©e par MÃƒÂ¤rklin
-// Ce code minimaliste a besoin de la Gleisbox pour lire l'UID prÃƒÂ©sent dans chaque locomotive
-// voir procÃƒÂ©dure dans Ã‚Â§4.1 de http://gelit.ch/Train/Raildue_F.pdf
+// MFX est une marque déposée par MARKLIN
+// Ce code minimaliste a besoin de la Gleisbox pour lire l'UID de chaque locomotive
 
 #include "Arduino.h"
 #include "freertos/FreeRTOS.h"
@@ -66,6 +61,7 @@ void setup()
   Serial.println("mfxQueue ok");
   delay(10000);
 
+  // Create locmotives instances
   loco[0] = new Loco("5519 CFL", 0x73, 0xF6, 0x88, 0x34);
   Loco::locoActive = loco[0]->addr();
   Serial.printf("%s is active\n", loco[0]->name());
