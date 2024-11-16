@@ -45,4 +45,4 @@ Les contributions sont les bienvenues ! Si vous souhaitez participer, veuillez o
 
 ### Licence
 
-Ce projet est basé sur un travail disponible ici : https://gelit.ch/Train/DirectMFX.ino
+Ce projet est basé sur un travail qui peut être consulté ici : https://gelit.ch/Train/DirectMFX.ino et https://gelit.ch/Train/MFX.pdf
