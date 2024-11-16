@@ -61,7 +61,7 @@ void setup()
   Serial.println("mfxQueue ok");
   delay(10000);
 
-  // Create locmotives instances
+  // Create locomotives instances
   loco[0] = new Loco("5519 CFL", 0x73, 0xF6, 0x88, 0x34);
   Loco::locoActive = loco[0]->addr();
   Serial.printf("%s is active\n", loco[0]->name());
