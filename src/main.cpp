@@ -235,16 +235,21 @@ void addr(byte address)
     buff[++len] = (address & (1 << b)) >> b;
 }
 
-void setSID(byte idx)
-{ // fixed SID from UID
+void setSID(byte idx) // Attribution de l'adresse de rail §3.2.4 et §4.3
+{
   if (trace)
   {
     Serial.print("setSID-");
     Serial.println(loco[idx]->name());
   }
   len = 0;
+  /*
+  Cette commande est envoyée à l'adresse de diffusion 0, puisque le décodeur ne connaît pas encore le SID.
+  Le décodeur passe ainsi en mode de fonctionnement avec l'UID correspondant et peut ensuite être adressé sous ce SID.
+  */
   addr0();
-  // §3.2.4  111 011 AAAAAAAAAAAAAA UID
+
+  //   111 011 AAAAAAAAAAAAAA UID
   //******************** fonction 0x3B (111 011) ****************************** */
 
   for (byte a = 0, b = 5; a < 6; a++, b--)
@@ -275,21 +280,21 @@ void setSID(byte idx)
   xQueueSend(mfxQueue, &buff, 0);
 }
 
-/*
+void centrale()
+{
+  /*
 3.2.6 Commande 111 101 : centrale
 111 101 UUUUUUUUUUUUUUUUUUUUUUU ZZZZZZZZZZ
 La centrale envoie cette commande à intervalles réguliers avec l'adresse de diffusion (broadcast) 0 indiquant ainsi son UID (U) et le compteur de nouvelles inscriptions (Z).
 */
-void centrale()
-{ // p23
-  // byte a, b;
+
   if (trace)
   {
     // Serial.println("Zentrale");
   }
   len = 0;
   addr0();
-  
+
   // Commande 0x3D (111 101)
   for (byte a = 0, b = 5; a < 6; a++, b--)
     buff[++len] = (0x3D & (1 << b)) >> b;
