@@ -9,11 +9,14 @@
 #include "Loco.h"
 #include "Mfx.h"
 
-gpio_num_t IN1_pin = GPIO_NUM_13; // IN1 H-Bridge
-gpio_num_t IN2_pin = GPIO_NUM_14; // IN2 H-Bridge
-gpio_num_t EN_pin = GPIO_NUM_12;  // ENABLE H-Bridge
+const uint32_t idCentrale = 0x476bb7dc;
 
-const gpio_num_t Red_Led = GPIO_NUM_2; // Power Status
+// Pin mapping LaBox
+gpio_num_t IN1_pin = GPIO_NUM_27; // IN1 H-Bridge
+gpio_num_t IN2_pin = GPIO_NUM_33; // IN2 H-Bridge
+gpio_num_t EN_pin = GPIO_NUM_32;  // ENABLE H-Bridge
+
+// const gpio_num_t Red_Led = GPIO_NUM_2; // Power Status
 
 const byte nbLocos = 10; // Taille du tableau des locomotives
 
@@ -98,7 +101,7 @@ void loop()
     if (MFX::power())
     {
       delay(500);
-      digitalWrite(Red_Led, 1);
+      // digitalWrite(Red_Led, 1);
       Serial.println("PowerON ('a' to PowerOFF)");
       loopState = 3;
     }
@@ -304,43 +307,11 @@ void centrale()
   buff[14] = 0;
   buff[15] = 1;
   len += 6;
+  
   // Centrale UID (32 bit)
-  buff[16] = 0;
-  buff[17] = 1;
-  buff[18] = 0;
-  buff[19] = 0;
-  buff[20] = 0;
-  buff[21] = 1;
-  buff[22] = 1;
-  buff[23] = 1;
-  len += 8;
-  buff[24] = 0;
-  buff[25] = 1;
-  buff[26] = 1;
-  buff[27] = 0;
-  buff[28] = 1;
-  buff[29] = 0;
-  buff[30] = 1;
-  buff[31] = 1;
-  len += 8;
-  buff[32] = 1;
-  buff[33] = 0;
-  buff[34] = 1;
-  buff[35] = 1;
-  buff[36] = 0;
-  buff[37] = 1;
-  buff[38] = 1;
-  buff[39] = 1;
-  len += 8;
-  buff[40] = 1;
-  buff[41] = 1;
-  buff[42] = 0;
-  buff[43] = 1;
-  buff[44] = 1;
-  buff[45] = 1;
-  buff[46] = 0;
-  buff[47] = 0;
-  len += 8;
+  for (byte a = 0, b = 31; a < 32; a++, b--)
+    buff[++len] = (idCentrale & (1 << b)) >> b;
+
   // Compteur (16 bits)
   buff[48] = 1;
   buff[49] = 0;
@@ -352,8 +323,8 @@ void centrale()
   buff[55] = 0;
   len += 8;
 
-  for (byte a = 0, b = 7; a < 8; a++, b--, len++)
-    buff[a + 56] = ((Loco::zahler + 1) & (1 << b)) >> b;
+  for (byte a = 0, b = 7; a < 8; a++, b--)
+    buff[++len] = ((Loco::zahler + 1) & (1 << b)) >> b;
 
   buff[0] = len; // Length in FIRST BYTE
   CRC();
