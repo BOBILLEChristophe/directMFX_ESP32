@@ -36,6 +36,9 @@ Ce projet propose une centrale numérique **MFX** destinée à piloter des locom
 - **Alimentation** : adaptée à la tension requise par les rails Märklin. (env 18V)
 
 LaBox de Locoduino convient parfaitement et apporte une base hard complète et épprouvée : https://forum.locoduino.org/index.php?topic=1618.msg20062#msg20062
+
+<img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
+
 ### Contribution
 
 Les contributions sont les bienvenues ! Si vous souhaitez participer, veuillez ouvrir une **issue** ou soumettre une **pull request**.
@@ -44,4 +47,4 @@ Les contributions sont les bienvenues ! Si vous souhaitez participer, veuillez o
 
 Ce projet est basé sur un travail qui peut être consulté ici : https://gelit.ch/Train/DirectMFX.ino et https://gelit.ch/Train/MFX.pdf
 
-<img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
+
