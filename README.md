@@ -45,3 +45,5 @@ Les contributions sont les bienvenues ! Si vous souhaitez participer, veuillez o
 Ce projet est basé sur un travail qui peut être consulté ici : https://gelit.ch/Train/DirectMFX.ino et https://gelit.ch/Train/MFX.pdf
 
 https://media.3rails.fr/original/3X/4/c/4c3d7808f0c96d30ff719652e460fd10f0652119.jpeg
+
+![LaBox de Locoduino pour piloter en MFX]([https://www.example.com/chemin/vers/image.png](https://media.3rails.fr/optimized/3X/4/c/4c3d7808f0c96d30ff719652e460fd10f0652119_2_690x490.jpeg))
