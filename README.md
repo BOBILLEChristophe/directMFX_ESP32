@@ -2,8 +2,7 @@
 
 Ce projet propose une centrale numérique **MFX** destinée à piloter des locomotives Märklin au format MFX. Conçue pour fonctionner sur une architecture ESP32, cette solution est une alternative aux propositions commerciales.
 
-##/!\
-Il s'agit d'une version qui est en cours de développement mais qui est fonctionnelle. D’ors et déjà, il est possible de commander des locomotives au travers du port série avec des commandes basiques du style ‘m’ pour mise sous tension, ‘8’ ou’9’ pour choisir l’adresse de la locomotive et ‘1’ à ‘9’ pour la vitesse  et ’d’ pour changer la direction avant ou arrière.
+/!\ Il s'agit d'une version qui est en cours de développement mais qui est fonctionnelle. D’ors et déjà, il est possible de commander des locomotives au travers du port série avec des commandes basiques du style ‘m’ pour mise sous tension, ‘8’ ou’9’ pour choisir l’adresse de la locomotive et ‘1’ à ‘9’ pour la vitesse  et ’d’ pour changer la direction avant ou arrière.
 
 
 Ce sujet fait l'objet d'un fil sur le forum 3R : https://forum.3rails.fr/t/controler-vos-trains-mfx-depuis-un-arduino-due-sans-passer-par-la-gleisbox/27563
