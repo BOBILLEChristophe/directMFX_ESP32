@@ -3,6 +3,14 @@
 // MFX est une marque déposée par MARKLIN
 // Ce code minimaliste a besoin de la Gleisbox pour lire l'UID de chaque locomotive
 
+#ifndef ARDUINO_ARCH_ESP32
+#error "Select an ESP32 board"
+#endif
+
+#define PROJECT "DirectMFX_ESP32"
+#define VERSION "0.2"
+#define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
+
 #include "Arduino.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -49,7 +57,13 @@ void setup()
 {
   trace = false; // debug
   Serial.begin(115200);
-  Serial.println("DirectMFX_ESP32");
+
+  Serial.printf("\nProject   :    %s", PROJECT);
+  Serial.printf("\nVersion   :    %s", VERSION);
+  Serial.printf("\nAuteur    :    %s", AUTHOR);
+  Serial.printf("\nFichier   :    %s", __FILE__);
+  Serial.printf("\nCompiled  :    %s", __DATE__);
+  Serial.printf(" - %s\n\n", __TIME__);
 
   MFX::setup(IN1_pin, IN2_pin, EN_pin);
 
