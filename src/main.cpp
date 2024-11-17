@@ -248,24 +248,17 @@ void setSID(byte idx)
   len = 0;
   addr0();
   // §3.2.4  111 011 AAAAAAAAAAAAAA UID
-  //******************** fonction 111 011 ****************************** */
-  buff[10] = 1;
-  buff[11] = 1;
-  buff[12] = 1;
-  buff[13] = 0;
-  buff[14] = 1;
-  buff[15] = 1;
-  len += 6;
-  //******************* adresse loco 7 premiers bits ******************* */
+  //******************** fonction 0x3B (111 011) ****************************** */
+
+  for (byte a = 0, b = 5; a < 6; a++, b--)
+    buff[++len] = 0x3B & (1 << b) >> b;
+
   // Adresse sur 14 bits
-  buff[16] = 0;
-  buff[17] = 0;
-  buff[18] = 0;
-  buff[19] = 0;
-  buff[20] = 0;
-  buff[21] = 0;
-  buff[22] = 0;
-  len += 7;
+  //******************* adresse loco 7 premiers bits a zero ******************* */
+
+  for (byte a = 0; a < 7; a++)
+    buff[++len] = 0;
+
   //******************* adresse loco 7 derniers bits ******************* */
 
   for (byte a = 0, b = 6; a < 7; a++, b--)
@@ -307,7 +300,7 @@ void centrale()
   buff[14] = 0;
   buff[15] = 1;
   len += 6;
-  
+
   // Centrale UID (32 bit)
   for (byte a = 0, b = 31; a < 32; a++, b--)
     buff[++len] = (idCentrale & (1 << b)) >> b;
