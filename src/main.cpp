@@ -213,6 +213,7 @@ void addr0() // Broadcast
 
   for (byte a = 0; a < 7; a++) // 7 bits address
     buff[++len] = 0;
+
 } // always 7 bit adr (buff[0] used for LENGTH)
 
 void addr(byte address)
@@ -231,7 +232,7 @@ void addr(byte address)
   len = 2;
 
   for (byte a = 0, b = 6; a < 7; a++, b--) // 7 bits address
-    buff[++len] = address & (1 << b);
+    buff[++len] = (address & (1 << b)) >> b;
 }
 
 void setSID(byte idx)
@@ -247,7 +248,7 @@ void setSID(byte idx)
   //******************** fonction 0x3B (111 011) ****************************** */
 
   for (byte a = 0, b = 5; a < 6; a++, b--)
-    buff[++len] = 0x3B & (1 << b) >> b;
+    buff[++len] = (0x3B & (1 << b)) >> b;
 
   // Adresse sur 14 bits
   //******************* adresse loco 7 premiers bits a zero ******************* */
@@ -258,14 +259,14 @@ void setSID(byte idx)
   //******************* adresse loco 7 derniers bits ******************* */
 
   for (byte a = 0, b = 6; a < 7; a++, b--)
-    buff[++len] = loco[idx]->addr() & (1 << b) >> b;
+    buff[++len] = (loco[idx]->addr() & (1 << b)) >> b;
 
   //******************* UID loco *************************************** */
 
   for (byte j = 0; j < 4; j++)
   {
     for (byte a = 0, b = 7; a < 8; a++, b--)
-      buff[++len] = loco[idx]->UID(j) & (1 << b) >> b;
+      buff[++len] = (loco[idx]->UID(j) & (1 << b)) >> b;
   }
 
   //******************************************************************** */
@@ -288,14 +289,10 @@ void centrale()
   }
   len = 0;
   addr0();
-  // Commande 111 101
-  buff[10] = 1;
-  buff[11] = 1;
-  buff[12] = 1;
-  buff[13] = 1;
-  buff[14] = 0;
-  buff[15] = 1;
-  len += 6;
+  
+  // Commande 0x3D (111 101)
+  for (byte a = 0, b = 5; a < 6; a++, b--)
+    buff[++len] = (0x3D & (1 << b)) >> b;
 
   // Centrale UID (32 bit)
   for (byte a = 0, b = 31; a < 32; a++, b--)
