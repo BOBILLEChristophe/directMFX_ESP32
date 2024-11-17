@@ -205,18 +205,14 @@ void loop()
   }
 }
 
-void addr0()
+void addr0() // Broadcast
 {
   buff[1] = 1;
   buff[2] = 0;
-  buff[3] = 0;
-  buff[4] = 0;
-  buff[5] = 0;
-  buff[6] = 0;
-  buff[7] = 0;
-  buff[8] = 0;
-  buff[9] = 0;
-  len = 2 + 7;
+  len = 2;
+
+  for (byte a = 0; a < 7; a++) // 7 bits address
+    buff[++len] = 0;
 } // always 7 bit adr (buff[0] used for LENGTH)
 
 void addr(byte address)
