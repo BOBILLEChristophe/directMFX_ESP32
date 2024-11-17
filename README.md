@@ -19,10 +19,6 @@ Ce sujet fait l'objet d'un fil sur le forum 3R : https://forum.3rails.fr/t/contr
 - **Pont en H** (ex : L293D ou équivalent) pour commander les rails.
 - **Source d'alimentation** adaptée à la tension des rails Märklin. (env 18V)
 
-Ce projet est un développement de 
-
-
-
 Ce projet propose une centrale numérique **MFX** destinée à piloter des locomotives Märklin au format MFX. Conçue pour fonctionner sur une architecture ESP32, cette solution offre une alternative compacte, performante et personnalisable pour les passionnés de modélisme ferroviaire.
 
 ### Fonctionnalités principales
@@ -39,6 +35,7 @@ Ce projet propose une centrale numérique **MFX** destinée à piloter des locom
 - **Pont en H** (par exemple, L293D ou équivalent) : pour la commande de la puissance des rails.
 - **Alimentation** : adaptée à la tension requise par les rails Märklin. (env 18V)
 
+LaBox de Locoduino convient parfaitement et apporte une base hard complète et épprouvée : https://forum.locoduino.org/index.php?topic=1618.msg20062#msg20062
 ### Contribution
 
 Les contributions sont les bienvenues ! Si vous souhaitez participer, veuillez ouvrir une **issue** ou soumettre une **pull request**.
