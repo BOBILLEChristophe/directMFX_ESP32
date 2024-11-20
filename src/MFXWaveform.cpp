@@ -1,39 +1,40 @@
+/*
+
+  MFXWaveform.cpp
 
 
-#include "MFX.h"
+*/
 
-// Déclaration du sémaphore
-// SemaphoreHandle_t buffSemaphore;
+#include "MFXWaveform.h"
 
-gpio_num_t MFX::IN1_pin;
-gpio_num_t MFX::IN2_pin;
-gpio_num_t MFX::EN_pin;
-bool MFX::m_polarity = false;
-byte MFX::step = 0;
-volatile byte MFX::nSync = 0;
-volatile byte MFX::stufN = 0;
-volatile byte MFX::Ti = 0;
-volatile bool MFX::TuCmd = false;
-volatile byte MFX::Pa[18 + 4] = {0};
-byte MFX::buff[BUFFER_SIZE] = {0};
-bool MFX::m_power = false;
-volatile byte MFX::stateMachine = 0;
-volatile bool MFX::receivedMsg = false;
-bool MFX::bitVal = 0;
-byte MFX::bitIdx = 0;
-byte MFX::leng = 0;
+bool MFXWaveform::m_polarity = false;
+byte MFXWaveform::step = 0;
+volatile byte MFXWaveform::nSync = 0;
+volatile byte MFXWaveform::stufN = 0;
+volatile byte MFXWaveform::Ti = 0;
+volatile bool MFXWaveform::TuCmd = false;
+volatile byte MFXWaveform::Pa[18 + 4] = {0};
+byte MFXWaveform::buff[BUFFER_SIZE] = {0};
+volatile byte MFXWaveform::stateMachine = 0;
+volatile bool MFXWaveform::receivedMsg = false;
+bool MFXWaveform::bitVal = 0;
+byte MFXWaveform::bitIdx = 0;
+byte MFXWaveform::leng = 0;
+
+void MFXWaveform::setStateMachine(byte state)
+{
+    stateMachine = state;
+}
 
 // Tâche de réception de données
-void MFX::receiverTask(void *parameter)
+void MFXWaveform::receiverTask(void *parameter)
 {
-    // byte *buff = (byte *)parameter; // Cast du paramètre en pointeur vers un tableau de bytes
     byte receivedBuff[BUFFER_SIZE]; // Message reçu
     while (true)
     {
         // Lecture du message dans la queue
         if (xQueueReceive(mfxQueue, (void *)receivedBuff, (TickType_t)10) == pdPASS)
         {
-            // Attendre que le sémaphore soit disponible
             // if (xSemaphoreTake(buffSemaphore, portMAX_DELAY) == pdTRUE)
             // {
             memcpy(buff, receivedBuff, BUFFER_SIZE);
@@ -50,30 +51,15 @@ void MFX::receiverTask(void *parameter)
             // }
 
             //*************************************************************** */
-
-            // Libérer le sémaphore après la copie
             //     xSemaphoreGive(buffSemaphore);
             // }
         }
     }
 }
 
-void MFX::setup(gpio_num_t IN1, gpio_num_t IN2, gpio_num_t EN)
+//void MFXWaveform::setup(gpio_num_t IN1, gpio_num_t IN2, gpio_num_t EN)
+void MFXWaveform::setup()
 {
-    IN1_pin = IN1;
-    IN2_pin = IN2;
-    EN_pin = EN;
-
-    pinMode(EN_pin, OUTPUT);
-    // gpio_set_direction(EN_pin, GPIO_MODE_OUTPUT);
-    digitalWrite(EN_pin, LOW);
-    pinMode(IN1_pin, OUTPUT);
-    // gpio_set_direction(IN1_pin, GPIO_MODE_OUTPUT);
-    pinMode(IN2_pin, OUTPUT);
-    // gpio_set_direction(IN2_pin, GPIO_MODE_OUTPUT);
-    digitalWrite(IN1_pin, LOW);
-    digitalWrite(IN2_pin, HIGH);
-
     // ptrToClass = this;
     timer = timerBegin(0, 80, true);
     timerAttachInterrupt(timer, timerHandler, true);
@@ -92,49 +78,20 @@ void MFX::setup(gpio_num_t IN1, gpio_num_t IN2, gpio_num_t EN)
     }
 
     // Création de la tâche de réception
-    xTaskCreatePinnedToCore(MFX::receiverTask, "Receiver Task", 2 * 1024, NULL, 1, NULL, 0);
-
-    // Création du sémaphore
-    // buffSemaphore = xSemaphoreCreateBinary();
-    // xSemaphoreGive(buffSemaphore); // Initialise le sémaphore comme disponible
+    xTaskCreatePinnedToCore(MFXWaveform::receiverTask, "Receiver Task", 2 * 1024, NULL, 1, NULL, 0);
 }
 
-void MFX::setSM(byte x)
-{
-    stateMachine = x;
-}
 
-void MFX::setPower(bool power)
+void MFXWaveform::toggleSignal()
 {
-    Serial.println(power);
-    if (power)
-    {
-        digitalWrite(EN_pin, HIGH); // Active l'alimentation
-        m_power = true;
-    }
-    else
-    {
-        digitalWrite(EN_pin, LOW); // Active l'alimentation
-        m_power = false;
-    }
-}
-
-bool MFX::power()
-{
-    return m_power;
-}
-
-void MFX::toggleSignal()
-{
-    digitalWrite(IN1_pin, !m_polarity);
-    digitalWrite(IN2_pin, m_polarity);
+    Centrale::togglePin(m_polarity);
     m_polarity = !m_polarity;
 } // Change Level
 
-hw_timer_t *MFX::timer = nullptr;
+hw_timer_t *MFXWaveform::timer = nullptr;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
-void IRAM_ATTR MFX::timerHandler()
+void IRAM_ATTR MFXWaveform::timerHandler()
 {
     portENTER_CRITICAL_ISR(&timerMux);
     {
@@ -176,7 +133,7 @@ void IRAM_ATTR MFX::timerHandler()
     portEXIT_CRITICAL_ISR(&timerMux);
 }
 
-void MFX::handleState3()
+void MFXWaveform::handleState3()
 {
     if (step == 1 || step == 3 || step == 4 || step == 6 || step == 8 || step == 9)
     {
@@ -197,7 +154,7 @@ void MFX::handleState3()
     }
 }
 
-void MFX::handleState4()
+void MFXWaveform::handleState4()
 {
     if (step == 125)
     {
@@ -206,7 +163,7 @@ void MFX::handleState4()
     }
 }
 
-void MFX::handleState5()
+void MFXWaveform::handleState5()
 {
     if (Pa[Ti])
     {
@@ -229,7 +186,7 @@ void MFX::handleState5()
     }
 }
 
-void MFX::handleState7()
+void MFXWaveform::handleState7()
 {
     if (Pa[Ti])
     {
@@ -252,7 +209,7 @@ void MFX::handleState7()
     }
 }
 
-void MFX::handleState10()
+void MFXWaveform::handleState10()
 {
     if (step == 1)
     {
@@ -288,7 +245,7 @@ void MFX::handleState10()
     }
 }
 
-void MFX::handleState20()
+void MFXWaveform::handleState20()
 {
     if (bitVal)
     {
@@ -322,7 +279,7 @@ void MFX::handleState20()
     bitVal = !bitVal;
 }
 
-void MFX::handleState30()
+void MFXWaveform::handleState30()
 {
     if (bitVal)         // Si le bit F est à 1
         toggleSignal(); // Envoie un "1"

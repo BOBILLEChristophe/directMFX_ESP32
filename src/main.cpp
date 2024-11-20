@@ -1,61 +1,114 @@
+/*
+
+  Main.cpp
+
 // 8 oct 2024 from https://gelit.ch/Train/DirectMFX.ino
 
 // MFX est une marque déposée par MARKLIN
 // Ce code minimaliste a besoin de la Gleisbox pour lire l'UID de chaque locomotive
+
+*/
+
+
+
 
 #ifndef ARDUINO_ARCH_ESP32
 #error "Select an ESP32 board"
 #endif
 
 #define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.2"
+#define VERSION "0.4"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include <unordered_map>
+#include <vector>
+#include "Centrale.h"
 #include "Loco.h"
-#include "Mfx.h"
+#include "Message.h"
+#include "MFXWaveform.h"
 
 const uint32_t idCentrale = 0x476bb7dc;
+
+//----------------------------------------------------------------------------------------
+//  Buffers  : Rocrail always send 13 bytes
+//----------------------------------------------------------------------------------------
+
+static const uint8_t BUFFER_S = 13;
+uint8_t rxBuffer[BUFFER_S]; // RX buffer
+uint8_t txBuffer[BUFFER_S]; // TX buffer
+
+//----------------------------------------------------------------------------------------
+//  Marklin hash
+//----------------------------------------------------------------------------------------
+
+uint16_t thisHash = 0x18FF; // hash
+uint16_t rrHash;            // for Rocrail hash
 
 // Pin mapping LaBox
 gpio_num_t IN1_pin = GPIO_NUM_27; // IN1 H-Bridge
 gpio_num_t IN2_pin = GPIO_NUM_33; // IN2 H-Bridge
 gpio_num_t EN_pin = GPIO_NUM_32;  // ENABLE H-Bridge
 
-// const gpio_num_t Red_Led = GPIO_NUM_2; // Power Status
-
 const byte nbLocos = 10; // Taille du tableau des locomotives
-
-std::array<byte, BUFFER_SIZE> buff; // MFX Buffer (type BYTE to store Length)
-int Ti;                             // MM2_Bit
-uint16_t crc;                       // Krauss p13
-byte len;                           // MFX Frame  Length
-byte Pa[18 + 4];                    // MM2 Packet for Turn
-byte loopState;                     // State in loop
-bool trace;                         // Debug
-unsigned long TZ, TP, T_S88, Time;
 
 // Pointeur vers la queue
 QueueHandle_t mfxQueue;
 
 Loco *loco[nbLocos];
 
-void addr(byte Loc);
-void addr0();
-void setSID(byte Loc);
-void centrale();
-void periodic(byte Loc);
-void CRC();
-void bCRC(bool b);
-void Turn(int dev, bool val);
-void Tri(int v, int b);
-void S88();
+//----------------------------------------------------------------------------------------
+//  Select a communication mode
+//----------------------------------------------------------------------------------------
+
+// #define ETHERNET
+#define WIFI
+
+IPAddress ip(192, 168, 1, 210);
+const uint port = 2560;
+
+//----------------------------------------------------------------------------------------
+//  Ethernet
+//----------------------------------------------------------------------------------------
+#if defined(ETHERNET)
+#include <Ethernet.h>
+#include <SPI.h>
+byte mac[] = {0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xEF};
+EthernetServer server(port);
+EthernetClient client;
+
+//----------------------------------------------------------------------------------------
+//  WIFI
+//----------------------------------------------------------------------------------------
+#elif defined(WIFI)
+#include <WiFi.h>
+
+const char *ssid = "Livebox-BC90";
+const char *password = "V9b7qzKFxdQfbMT4Pa";
+IPAddress gateway(192, 168, 1, 1);  // passerelle par défaut
+IPAddress subnet(255, 255, 255, 0); // masque de sous réseau
+WiFiServer server(port);
+WiFiClient client;
+
+#endif
+
+//----------------------------------------------------------------------------------------
+//  Queues
+//----------------------------------------------------------------------------------------
+
+QueueHandle_t rxQueue;
+
+//----------------------------------------------------------------------------------------
+//  Tasks
+//----------------------------------------------------------------------------------------
+
+void rxTask(void *pvParameters);
 
 void setup()
 {
-  trace = false; // debug
+  //trace = false; // debug
   Serial.begin(115200);
 
   Serial.printf("\nProject   :    %s", PROJECT);
@@ -65,7 +118,9 @@ void setup()
   Serial.printf("\nCompiled  :    %s", __DATE__);
   Serial.printf(" - %s\n\n", __TIME__);
 
-  MFX::setup(IN1_pin, IN2_pin, EN_pin);
+
+  MFXWaveform::setup();
+  Centrale::setup(idCentrale, IN1_pin, IN2_pin, EN_pin);
 
   // Création de la queue (10 messages de 'BUFFER_SIZE'(100) octets)
   mfxQueue = xQueueCreate(10, BUFFER_SIZE);
@@ -76,427 +131,107 @@ void setup()
       ;
   }
   Serial.println("mfxQueue ok");
-  delay(10000);
 
-  // Create locomotives instances
-  loco[0] = new Loco("5519 CFL", 0x73, 0xF6, 0x88, 0x34);
-  Loco::locoActive = loco[0]->addr();
-  Serial.printf("%s is active\n", loco[0]->name());
-
-  loopState = 1;
-  Serial.println("PowerOFF - 'm' to PowerON");
-}
-
-void loop()
-{
-  byte cmd;
-
-  switch (loopState)
+#if !defined(ETHERNET) && !defined(WIFI)
+  Serial.print("Select a communication mode.");
+  while (1)
   {
+  }
+#endif
 
-  case 0: // stay here after PowerOFF
-    break;
+#if defined(ETHERNET)
+  Serial.println("Waiting for Ethernet connection : ");
+  // Ethernet initialization
+  Ethernet.init(5); // MKR ETH Shield (change depending on your hardware)
+  Ethernet.begin(mac, ip);
+  server.begin();
+  Serial.print("IP address = ");
+  Serial.println(Ethernet.localIP());
+  Serial.printf("Port = %d\n", port);
 
-  case 1:
-    if (Serial.available() > 0)
-    {
-      cmd = Serial.read(); // start here from setup
-      if (cmd == 'm')
-      {
-        MFX::setPower(true);
-        MFX::setSM(10);
-        delay(200);
-        loopState = 2;
-      }
-    } // send Sync & PowerON
-    break;
-
-  case 2:
-    if (MFX::power())
-    {
-      delay(500);
-      // digitalWrite(Red_Led, 1);
-      Serial.println("PowerON ('a' to PowerOFF)");
-      loopState = 3;
-    }
-    break;
-
-  case 3:
-    // Za = 0;
-    centrale();
+#elif defined(WIFI)
+  WiFi.config(ip, gateway, subnet);
+  WiFi.begin(ssid, password);
+  Serial.print("Waiting for WiFi connection : \n\n");
+  while (WiFi.status() != WL_CONNECTED)
+  {
     delay(500);
-    centrale();
-    delay(500);
-    centrale();
-    delay(500);
-    loopState = 4; //  Ã‚Â§4.2
-    break;
-
-  case 4:
-    for (byte i = 0; i < nbLocos; i++)
-    {
-      if (loco[i] != nullptr)
-      {
-        setSID(i);
-        delay(200);
-        // Za++;
-        centrale();
-        delay(200);
-        Serial.println("setSID Robel");
-      }
-    }
-    TP = millis() + 50;
-    TZ = millis() + 500;
-    T_S88 = millis() + 1000; // set Timing
-    loopState = 5;
-    break;
-
-  case 5:
-
-    if (millis() > T_S88)
-    {
-      T_S88 = millis() + 1000;
-      S88();
-    }
-    if (millis() > TZ)
-    {
-      TZ = millis() + 500;
-      centrale();
-    }
-    if (millis() > TP)
-    {
-      TP = millis() + 5;
-      if (loco[0] != nullptr) // Il existe au moins une loc
-      {
-        periodic(0);
-      }
-    } // Find Next Decoder
-
-    if (Serial.available() > 0)
-    {
-      cmd = Serial.read();
-      if (cmd > 64 && cmd < 91)
-      {
-        Serial.println("CapsLock !!!");
-      }
-      if (cmd >= '0' && cmd <= '7')
-        loco[0]->speed(cmd - 48);
-
-      // Serial.printf("commande = %d\n", cmd);
-
-      switch (cmd)
-      {
-        //   case '8': LoA=Rob; Serial.println("Robel"); break;
-        //   case '9': LoA=BLS; Serial.println("BLS"); break;
-      case 'l':
-        loco[0]->setFunct(0, 1);
-        break;
-      case 'b':
-        loco[0]->toggleFunct(2);
-        break;
-      case 's':
-        loco[0]->toggleFunct(3);
-        break;
-      case 'd':
-        loco[0]->toggleDir();
-        Serial.printf("Toggle Direction %s\n", loco[0]->dir() ? "arriere" : "avant");
-        break;
-        //   case 't': TurnVal=!TurnVal; Turn(TurnAdr,TurnVal); delay(250); Serial.print("TurnVal="); Serial.println(TurnVal); break;
-        //   case 's': Serial.print("Power="); Serial.print(power); Serial.print("  S="); Serial.print(S); Serial.print("  SM="); Serial.println(SM);
-        //             Serial.print("Len="); Serial.print(buff[0]); Serial.print("   CRC="); Serial.println(crc,HEX);
-        //             for (a=1; a<=buff[0]; a++) {Serial.print(" "); Serial.print(buff[a]);} Serial.println();
-        //             Serial.print("MM2= "); for (a=0; a<=18; a++) {Serial.print(Pa[a]); Serial.print(" ");}  Serial.println();break;
-      case 'a':
-        MFX::setPower(false);
-        loopState = 1;
-        Serial.println("Power0FF ('m' to PowerON)");
-        break;
-        //   case 'h': Serial.println("Speed:0-7  Robel:8  BLS:9  l:Light  d:Direction  t:Turn  s:Statistics"); break;
-      }
-    }
-    static byte compt = 0;
-    break;
+    Serial.print(".");
   }
-}
+  Serial.println("");
+  Serial.println("WiFi connected.");
+  Serial.print("IP address : ");
+  Serial.println(WiFi.localIP());
+  Serial.printf("Port = %d\n", port);
+  server.begin();
 
-void addr0() // Broadcast
+#endif
+
+  Serial.printf("\n\nWaiting for connection from Rocrail.\n");
+
+  while (!client) // listen for incoming clients
+    client = server.available();
+
+  // extract the Rocrail hash
+  if (client.connected())
+  {                 // loop while the client's connected
+    int16_t rb = 0; //!\ Do not change type int16_t See https://www.arduino.cc/reference/en/language/functions/communication/stream/streamreadbytes/
+    while (rb != BUFFER_S)
+    {
+      if (client.available()) // if there's bytes to read from the client,
+        rb = client.readBytes(rxBuffer, BUFFER_S);
+    }
+    rrHash = ((rxBuffer[2] << 8) | rxBuffer[3]);
+
+    Serial.printf("New Client Rocrail : 0x");
+    Serial.println(rrHash, HEX);
+
+    //****************** instrances de Loco ***************************************************************
+
+    // Create locomotives instances
+    loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
+    loco[1] = Loco::createLoco(2, "test", 0x73, 0xF6, 0x88, 0x35);
+
+    Message::setup(loco, nbLocos);
+
+    // Create queues
+    rxQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));
+    // txQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));
+    // debugQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));  // Create debug queue
+
+    // Create tasks
+    xTaskCreatePinnedToCore(rxTask, "RxTask", 4 * 1024, NULL, 5, NULL, 0); // priority 5
+    // xTaskCreatePinnedToCore(txTask, "TxTask", 4 * 1024, NULL, 3, NULL, 0);                  // priority 3
+    // xTaskCreatePinnedToCore(debugFrameTask, "debugFrameTask", 2 * 1024, NULL, 1, NULL, 0);  // debug task with priority 1 on core 1
+
+    void rxTask(void *pvParameters);
+    // void txTask(void *pvParameters);
+    // void debugFrameTask(void *pvParameters);  // Debug task
+  }
+} // End setup
+
+void loop(){}
+
+//----------------------------------------------------------------------------------------
+//   TCPReceiveTask
+//----------------------------------------------------------------------------------------
+
+void rxTask(void *pvParameters)
 {
-  buff[1] = 1;
-  buff[2] = 0;
-  len = 2;
-
-  for (byte a = 0; a < 7; a++) // 7 bits address
-    buff[++len] = 0;
-
-} // always 7 bit adr (buff[0] used for LENGTH)
-
-void addr(byte address)
-{
-  /*
-  2.2.4 Structure des trames de données
-
-  10 AAAAAAA : adresse de 7 bits
-  110 AAAAAAAAA : adresse de 9 bits
-  1110 AAAAAAAAAAA : adresse de 11 bits
-  1111 AAAAAAAAAAAAAA : adresse de 14 bits
-  */
-
-  buff[1] = 1;
-  buff[2] = 0;
-  len = 2;
-
-  for (byte a = 0, b = 6; a < 7; a++, b--) // 7 bits address
-    buff[++len] = (address & (1 << b)) >> b;
-}
-
-void setSID(byte idx) // Attribution de l'adresse de rail §3.2.4 et §4.3
-{
-  if (trace)
+  Message message;
+  while (true)
   {
-    Serial.print("setSID-");
-    Serial.println(loco[idx]->name());
-  }
-  len = 0;
-  /*
-  Cette commande est envoyée à l'adresse de diffusion 0, puisque le décodeur ne connaît pas encore le SID.
-  Le décodeur passe ainsi en mode de fonctionnement avec l'UID correspondant et peut ensuite être adressé sous ce SID.
-  */
-  addr0();
-
-  //   111 011 AAAAAAAAAAAAAA UID
-  //******************** fonction 0x3B (111 011) ****************************** */
-
-  for (byte a = 0, b = 5; a < 6; a++, b--)
-    buff[++len] = (0x3B & (1 << b)) >> b;
-
-  // Adresse sur 14 bits
-  //******************* adresse loco 7 premiers bits a zero ******************* */
-
-  for (byte a = 0; a < 7; a++)
-    buff[++len] = 0;
-
-  //******************* adresse loco 7 derniers bits ******************* */
-
-  for (byte a = 0, b = 6; a < 7; a++, b--)
-    buff[++len] = (loco[idx]->addr() & (1 << b)) >> b;
-
-  //******************* UID loco *************************************** */
-
-  for (byte j = 0; j < 4; j++)
-  {
-    for (byte a = 0, b = 7; a < 8; a++, b--)
-      buff[++len] = (loco[idx]->UID(j) & (1 << b)) >> b;
-  }
-
-  //******************************************************************** */
-  buff[0] = len; // Length in FIRST BYTE
-  CRC();
-  xQueueSend(mfxQueue, &buff, 0);
-}
-
-void centrale()
-{
-  /*
-3.2.6 Commande 111 101 : centrale
-111 101 UUUUUUUUUUUUUUUUUUUUUUU ZZZZZZZZZZ
-La centrale envoie cette commande à intervalles réguliers avec l'adresse de diffusion (broadcast) 0 indiquant ainsi son UID (U) et le compteur de nouvelles inscriptions (Z).
-*/
-
-  if (trace)
-  {
-    // Serial.println("Zentrale");
-  }
-  len = 0;
-  addr0();
-
-  // Commande 0x3D (111 101)
-  for (byte a = 0, b = 5; a < 6; a++, b--)
-    buff[++len] = (0x3D & (1 << b)) >> b;
-
-  // Centrale UID (32 bit)
-  for (byte a = 0, b = 31; a < 32; a++, b--)
-    buff[++len] = (idCentrale & (1 << b)) >> b;
-
-  // Compteur (16 bits)
-  buff[48] = 1;
-  buff[49] = 0;
-  buff[50] = 0;
-  buff[51] = 0;
-  buff[52] = 0;
-  buff[53] = 0;
-  buff[54] = 0;
-  buff[55] = 0;
-  len += 8;
-
-  for (byte a = 0, b = 7; a < 8; a++, b--)
-    buff[++len] = ((Loco::zahler + 1) & (1 << b)) >> b;
-
-  buff[0] = len; // Length in FIRST BYTE
-  CRC();
-  xQueueSend(mfxQueue, &buff, 0);
-} // End centrale
-
-void periodic(byte idx)
-{
-  if (trace)
-  {
-    Serial.print("Periodic-");
-    Serial.println(loco[idx]->name());
-  }
-
-  len = 0;
-  // adresse loco (7 bits)
-  addr(loco[idx]->addr());
-  // commande 001: Conduite 001 R SSSSSSS
-  buff[10] = 0;
-  buff[11] = 0;
-  buff[12] = 1;
-  len += 3;
-  //  direction
-  buff[13] = loco[idx]->dir() ? 1 : 0; //
-  len += 1;
-  // vitesse
-  for (byte a = 0, b = 2; a < 3; a++, b--)
-    buff[++len] = (loco[idx]->speed() & (1 << b)) >> b;
-  // fonctions
-  buff[17] = 0;
-  buff[18] = 0;
-  buff[19] = 0;
-  buff[20] = 0;
-  len += 4; // only MSB
-  buff[21] = 0;
-  buff[22] = 1;
-  buff[23] = 1;
-  buff[24] = 1;
-  len += 4; // 3.1.5 F15-F0
-
-  // fonctions F15-F0 (MSB)
-  for (byte a = 0, b = 15; a < 16; a++, b--)
-    buff[++len] = loco[idx]->getFunct(b);
-
-  buff[0] = len; // Length in FIRST BYTE
-  CRC();
-  xQueueSend(mfxQueue, &buff, 0);
-} // End periodic
-
-void CRC()
-{ // avoid to compute in interrupt ! --> easier for bit stuffing !
-  byte a, b;
-  crc = 0x007F;
-  for (a = 1; a < buff[0] + 1; a++)
-  {
-    bCRC(buff[a]);
-  } // CRC
-  for (a = 0; a < 8; a++)
-  {
-    bCRC(0);
-  } // Krauss p13 "diese bit mÃƒÂ¼ssen zuerst mit 0 belegt ..."}
-  b = 8;
-  for (a = 0; a < 8; a++)
-  {
-    buff[len + 1 + a] = bitRead(crc, b - 1);
-    b--;
-  }
-  buff[0] += 8; // Length
-}
-
-void bCRC(bool b)
-{ // Krauss p13
-  crc = (crc << 1) + b;
-  if ((crc & 0x0100) > 0)
-  {
-    crc = (crc & 0x00FF) ^ 0x07;
-  }
-}
-
-void Turn(int dev, bool val)
-{ // Device value
-  int p[10];
-  int a;
-  int q[10];
-
-  if (dev > 0 && dev < 320)
-  {
-    p[0] = 1;
-    p[1] = 2;
-    p[2] = 1 * 4;
-    p[3] = 3 * 4;
-    p[4] = 3 * 3 * 4;
-    p[5] = 3 * 3 * 3 * 4;
-    p[6] = 3 * 3 * 3 * 3 * 4;
-    dev += 3;
-    for (a = 6; a >= 2; a--)
+    if (client.connected() && client.available())
     {
-      q[a] = 0;
-      if (dev >= p[a])
+      if (client.readBytes(rxBuffer, BUFFER_S) == BUFFER_S)
       {
-        q[a]++;
-        dev = dev - p[a];
-      }
-      if (dev >= p[a])
-      {
-        q[a]++;
-        dev = dev - p[a];
-      }
-      switch (a)
-      {
-      case 2:
-        Tri(q[2], 0);
-        break; // MM2 Adr become HIGH adr
-      case 3:
-        Tri(q[3], 2);
-        break;
-      case 4:
-        Tri(q[4], 4);
-        break;
-      case 5:
-        Tri(q[5], 6);
-        break;
-      case 6:
-        Tri(q[6], 8);
-        break;
+        message.decodeMsg(rxBuffer);
+        message.parse();
+        // xQueueSend(debugQueue, &message, 10);  // send to debug queue
+        // xQueueSend(rxQueue, rxBuffer, 10);
       }
     }
-    for (a = 1; a >= 0; a--)
-    {
-      q[a] = 0;
-      if (dev >= p[a])
-      {
-        q[a]++;
-        dev = dev - p[a];
-      }
-      switch (a)
-      {
-      case 0:
-        Tri(q[0], 12);
-        break; // Factor 4 implemented with bit 12 - 15
-      case 1:
-        Tri(q[1], 14);
-        break;
-      }
-    }
-    Tri(val, 10); // value
-    Tri(1, 16);   // always 1
+    vTaskDelay(10 / portTICK_PERIOD_MS); // Avoid busy-waiting
   }
 }
 
-void Tri(int v, int b)
-{ // value, Bit
-  switch (v)
-  {
-  case 0:
-    Pa[b] = 0;
-    Pa[b + 1] = 0;
-    break; // MC 145026 encoding
-  case 1:
-    Pa[b] = 1;
-    Pa[b + 1] = 1;
-    break;
-  case 2:
-    Pa[b] = 1;
-    Pa[b + 1] = 0;
-    break;
-  }
-}
-
-void S88() {}
