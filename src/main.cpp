@@ -1,12 +1,11 @@
 /*
-
   Main.cpp
 
-  from https://gelit.ch/Train/DirectMFX.ino
+  Source: https://gelit.ch/Train/DirectMFX.ino
 
-  MFX est une marque déposée par MARKLIN
-
+  MFX is a trademark of MARKLIN.
 */
+
 
 #ifndef ARDUINO_ARCH_ESP32
 #error "Select an ESP32 board"
@@ -26,47 +25,51 @@
 #include "Message.h"
 #include "MFXWaveform.h"
 
+
+// Central system ID used for identification
 const uint32_t idCentrale = 0x476bb7dc;
 
 //----------------------------------------------------------------------------------------
-//  Buffers  : Rocrail always send 13 bytes
+//  Buffers for communication: Rocrail always sends 13 bytes
 //----------------------------------------------------------------------------------------
 
-static const uint8_t BUFFER_S = 13;
-uint8_t rxBuffer[BUFFER_S]; // RX buffer
-uint8_t txBuffer[BUFFER_S]; // TX buffer
+static const uint8_t BUFFER_S = 13; // Size of communication buffers
+uint8_t rxBuffer[BUFFER_S];         // RX buffer for receiving data
+uint8_t txBuffer[BUFFER_S];         // TX buffer for transmitting data
 
 //----------------------------------------------------------------------------------------
-//  Marklin hash
+//  Märklin-specific hash
 //----------------------------------------------------------------------------------------
 
-uint16_t thisHash = 0x18FF; // hash
-uint16_t rrHash;            // for Rocrail hash
+//uint16_t thisHash = 0x18FF; // hash
+uint16_t rrHash;            // Rocrail hash received from Rocrail system
 
-// Pin mapping LaBox
-gpio_num_t IN1_pin = GPIO_NUM_27; // IN1 H-Bridge
-gpio_num_t IN2_pin = GPIO_NUM_33; // IN2 H-Bridge
-gpio_num_t EN_pin = GPIO_NUM_32;  // ENABLE H-Bridge
+// Pins for controlling H-Bridge
+gpio_num_t IN1_pin = GPIO_NUM_27;  // Pin for IN1 of H-Bridge
+gpio_num_t IN2_pin = GPIO_NUM_33;  // Pin for IN2 of H-Bridge
+gpio_num_t EN_pin = GPIO_NUM_32;   // Pin for Enable signal of H-Bridge
 
-const byte nbLocos = 10; // Taille du tableau des locomotives
+const byte nbLocos = 10;  // Maximum number of locomotives
 
-// Pointeur vers la queue
+// Pointer to the MFX message queue
 QueueHandle_t mfxQueue;
 
-Loco *loco[nbLocos];
+Loco *loco[nbLocos];  // Array of locomotive pointers
 
 //----------------------------------------------------------------------------------------
 //  Select a communication mode
 //----------------------------------------------------------------------------------------
 
+// Uncomment one of the following modes:
 // #define ETHERNET
 #define WIFI
 
+// Define IP address and port for the communication server
 IPAddress ip(192, 168, 1, 210);
 const uint port = 2560;
 
 //----------------------------------------------------------------------------------------
-//  Ethernet
+//  Ethernet configuration (if used)
 //----------------------------------------------------------------------------------------
 #if defined(ETHERNET)
 #include <Ethernet.h>
@@ -76,15 +79,16 @@ EthernetServer server(port);
 EthernetClient client;
 
 //----------------------------------------------------------------------------------------
-//  WIFI
+//  WiFi configuration (if used)
 //----------------------------------------------------------------------------------------
 #elif defined(WIFI)
 #include <WiFi.h>
 
+// WiFi credentials
 const char *ssid = "**********";
 const char *password = "**********";
-IPAddress gateway(192, 168, 1, 1);  // passerelle par défaut
-IPAddress subnet(255, 255, 255, 0); // masque de sous réseau
+IPAddress gateway(192, 168, 1, 1);  // Default gateway
+IPAddress subnet(255, 255, 255, 0); // Subnet mask
 WiFiServer server(port);
 WiFiClient client;
 
@@ -94,17 +98,16 @@ WiFiClient client;
 //  Queues
 //----------------------------------------------------------------------------------------
 
-QueueHandle_t rxQueue;
+QueueHandle_t rxQueue;  // Queue for receiving data
 
 //----------------------------------------------------------------------------------------
-//  Tasks
+//  Tasks declaration
 //----------------------------------------------------------------------------------------
 
-void rxTask(void *pvParameters);
+void rxTask(void *pvParameters);  // Task for handling received data
 
 void setup()
 {
-  // trace = false; // debug
   Serial.begin(115200);
 
   Serial.printf("\nProject   :    %s", PROJECT);
@@ -113,20 +116,22 @@ void setup()
   Serial.printf("\nFichier   :    %s", __FILE__);
   Serial.printf("\nCompiled  :    %s", __DATE__);
   Serial.printf(" - %s\n\n", __TIME__);
-
+  
+  // Initialize MFXWaveform and Centrale modules
   MFXWaveform::setup();
   Centrale::setup(idCentrale, IN1_pin, IN2_pin, EN_pin);
 
-  // Création de la queue (10 messages de 'BUFFER_SIZE'(100) octets)
+  // Create MFX message queue (10 * 'BUFFER_SIZE'(100) octets)
   mfxQueue = xQueueCreate(10, BUFFER_SIZE);
   if (mfxQueue == NULL)
   {
-    Serial.println("Erreur : impossible de creer la queue");
+    Serial.println("Error: Unable to create the MFX queue.");
     while (1)
       ;
   }
-  Serial.println("mfxQueue ok");
+  Serial.println("MFX queue initialized.");
 
+// Ensure at least one communication mode is defined
 #if !defined(ETHERNET) && !defined(WIFI)
   Serial.print("Select a communication mode.");
   while (1)
@@ -134,6 +139,7 @@ void setup()
   }
 #endif
 
+// Ethernet-specific initialization
 #if defined(ETHERNET)
   Serial.println("Waiting for Ethernet connection : ");
   // Ethernet initialization
@@ -145,6 +151,7 @@ void setup()
   Serial.printf("Port = %d\n", port);
 
 #elif defined(WIFI)
+  // WiFi-specific initialization
   WiFi.config(ip, gateway, subnet);
   WiFi.begin(ssid, password);
   Serial.print("Waiting for WiFi connection : \n\n");
@@ -153,8 +160,7 @@ void setup()
     delay(500);
     Serial.print(".");
   }
-  Serial.println("");
-  Serial.println("WiFi connected.");
+  Serial.println("\nWiFi connected.");
   Serial.print("IP address : ");
   Serial.println(WiFi.localIP());
   Serial.printf("Port = %d\n", port);
@@ -164,7 +170,8 @@ void setup()
 
   Serial.printf("\n\nWaiting for connection from Rocrail.\n");
 
-  while (!client) // listen for incoming clients
+  // Wait for a client connection
+  while (!client)
     client = server.available();
 
   // extract the Rocrail hash
@@ -181,15 +188,14 @@ void setup()
     Serial.printf("New Client Rocrail : 0x");
     Serial.println(rrHash, HEX);
 
-    //****************** instrances de Loco ***************************************************************
-
-    // Create locomotives instances
+    //Initialize locomotive instances
     loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
     loco[1] = Loco::createLoco(2, "test", 0x73, 0xF6, 0x88, 0x35);
 
+    // Set up the Message system
     Message::setup(loco, nbLocos);
 
-    // Create queues
+    // Create a queue for received data
     rxQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));
     // txQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));
     // debugQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));  // Create debug queue
@@ -208,7 +214,7 @@ void setup()
 void loop() {}
 
 //----------------------------------------------------------------------------------------
-//   TCPReceiveTask
+//   Task for receiving data over TCP
 //----------------------------------------------------------------------------------------
 
 void rxTask(void *pvParameters)
