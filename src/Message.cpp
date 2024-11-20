@@ -65,29 +65,19 @@ void Message::periodic(void *p)
                     // adresse loco (7 bits)
                     addr(loco[i]->addr());
                     // commande 001: Conduite 001 R SSSSSSS
-                    buff[10] = 0;
-                    buff[11] = 0;
-                    buff[12] = 1;
-                    len += 3;
+                    buff[++len] = 0;
+                    buff[++len] = 0;
+                    buff[++len] = 1;
                     //  direction
-                    buff[13] = loco[i]->dir() ? 1 : 0; //
-                    len += 1;
+                    buff[++len] = loco[i]->dir() ? 1 : 0; //
                     // vitesse
-                    for (byte a = 0, b = 2; a < 3; a++, b--)
+                    for (byte a = 0, b = 6; a < 7; a++, b--)
                         buff[++len] = (loco[i]->speed() & (1 << b)) >> b;
-                    // fonctions
-                    buff[17] = 0;
-                    buff[18] = 0;
-                    buff[19] = 0;
-                    buff[20] = 0;
-                    len += 4; // only MSB
-                    buff[21] = 0;
-                    buff[22] = 1;
-                    buff[23] = 1;
-                    buff[24] = 1;
-                    len += 4; // 3.1.5 F15-F0
-
-                    // fonctions F15-F0 (MSB)
+                    // commande 0111:  Fonctions F15-F0 (MSB)
+                    buff[++len] = 0;
+                    buff[++len] = 1;
+                    buff[++len] = 1;
+                    buff[++len] = 1;
                     for (byte a = 0, b = 15; a < 16; a++, b--)
                         buff[++len] = loco[i]->funct(b);
 
@@ -95,7 +85,7 @@ void Message::periodic(void *p)
                     CRC();
                     xQueueSend(mfxQueue, &buff, 0);
                 }
-                vTaskDelay(pdMS_TO_TICKS(10));
+                vTaskDelay(pdMS_TO_TICKS(5));
             }
             xSemaphoreGive(taskSemaphore);
         }
@@ -133,15 +123,14 @@ void Message::centrale(void *p)
                 buff[++len] = (Centrale::gUid() & (1 << b)) >> b;
 
             // Compteur (16 bits)
-            buff[48] = 1;
-            buff[49] = 0;
-            buff[50] = 0;
-            buff[51] = 0;
-            buff[52] = 0;
-            buff[53] = 0;
-            buff[54] = 0;
-            buff[55] = 0;
-            len += 8;
+            buff[++len] = 1;
+            buff[++len] = 0;
+            buff[++len] = 0;
+            buff[++len] = 0;
+            buff[++len] = 0;
+            buff[++len] = 0;
+            buff[++len] = 0;
+            buff[++len] = 0;
 
             for (byte a = 0, b = 7; a < 8; a++, b--)
                 buff[++len] = ((Loco::zahler + 1) & (1 << b)) >> b;
@@ -301,7 +290,10 @@ void Message::parse()
         {
         case CAN_LOCO_SPEED:
             tempSpeed = (data[4] << 8) | data[5];
-            tempSpeed = map(tempSpeed, 0, 1000, 0, 7);
+            tempSpeed = map(tempSpeed, 0, 1000, 0, 127);
+            if (tempSpeed == 1)
+                tempSpeed = 0;
+            // tempSpeed = map(tempSpeed, 0, 1000, 0, 7);
             currentLoco->speed(tempSpeed);
             break;
         case CAN_LOCO_DIREC: // 1 = avant 2 = arriere

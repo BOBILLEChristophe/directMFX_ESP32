@@ -57,7 +57,7 @@ void MFXWaveform::receiverTask(void *parameter)
     }
 }
 
-//void MFXWaveform::setup(gpio_num_t IN1, gpio_num_t IN2, gpio_num_t EN)
+
 void MFXWaveform::setup()
 {
     // ptrToClass = this;
