@@ -81,8 +81,8 @@ EthernetClient client;
 #elif defined(WIFI)
 #include <WiFi.h>
 
-const char *ssid = "Livebox-BC90";
-const char *password = "V9b7qzKFxdQfbMT4Pa";
+const char *ssid = "**********";
+const char *password = "**********";
 IPAddress gateway(192, 168, 1, 1);  // passerelle par défaut
 IPAddress subnet(255, 255, 255, 0); // masque de sous réseau
 WiFiServer server(port);
