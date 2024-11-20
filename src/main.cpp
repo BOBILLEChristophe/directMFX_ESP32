@@ -2,22 +2,18 @@
 
   Main.cpp
 
-// 8 oct 2024 from https://gelit.ch/Train/DirectMFX.ino
+  from https://gelit.ch/Train/DirectMFX.ino
 
-// MFX est une marque déposée par MARKLIN
-// Ce code minimaliste a besoin de la Gleisbox pour lire l'UID de chaque locomotive
+  MFX est une marque déposée par MARKLIN
 
 */
-
-
-
 
 #ifndef ARDUINO_ARCH_ESP32
 #error "Select an ESP32 board"
 #endif
 
 #define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.4"
+#define VERSION "0.5"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
@@ -108,7 +104,7 @@ void rxTask(void *pvParameters);
 
 void setup()
 {
-  //trace = false; // debug
+  // trace = false; // debug
   Serial.begin(115200);
 
   Serial.printf("\nProject   :    %s", PROJECT);
@@ -117,7 +113,6 @@ void setup()
   Serial.printf("\nFichier   :    %s", __FILE__);
   Serial.printf("\nCompiled  :    %s", __DATE__);
   Serial.printf(" - %s\n\n", __TIME__);
-
 
   MFXWaveform::setup();
   Centrale::setup(idCentrale, IN1_pin, IN2_pin, EN_pin);
@@ -210,7 +205,7 @@ void setup()
   }
 } // End setup
 
-void loop(){}
+void loop() {}
 
 //----------------------------------------------------------------------------------------
 //   TCPReceiveTask
@@ -234,4 +229,3 @@ void rxTask(void *pvParameters)
     vTaskDelay(10 / portTICK_PERIOD_MS); // Avoid busy-waiting
   }
 }
-
