@@ -95,9 +95,6 @@ void IRAM_ATTR MFXWaveform::timerHandler()
 {
     portENTER_CRITICAL_ISR(&timerMux);
     {
-        // Protéger l'accès à buff avec le sémaphore
-        // if (xSemaphoreTakeFromISR(buffSemaphore, NULL) == pdTRUE)
-        // {
         step++; // Compteur de timing
 
         switch (stateMachine)
@@ -128,7 +125,6 @@ void IRAM_ATTR MFXWaveform::timerHandler()
             handleState30();
             break;
         }
-        //}
     }
     portEXIT_CRITICAL_ISR(&timerMux);
 }
