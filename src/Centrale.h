@@ -7,14 +7,10 @@
 
 #pragma once
 
-// #ifndef _CENTRALE_H_
-// #define _CENTRALE_H_
-
 #include <Arduino.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-//#include "Message.h"
 
 class Centrale
 {

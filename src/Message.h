@@ -62,7 +62,7 @@ public:
     static void bCRC(bool);
     static void Turn(int, bool);
     static void Tri(int, int);
-    static void S88();
+    //static void S88();
 
     static void periodic(void *);
     static void centrale(void *);

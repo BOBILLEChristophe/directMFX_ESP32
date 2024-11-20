@@ -78,6 +78,7 @@ void Message::periodic(void *p)
                     buff[++len] = 1;
                     buff[++len] = 1;
                     buff[++len] = 1;
+
                     for (byte a = 0, b = 15; a < 16; a++, b--)
                         buff[++len] = loco[i]->funct(b);
 
@@ -293,7 +294,6 @@ void Message::parse()
             tempSpeed = map(tempSpeed, 0, 1000, 0, 127);
             if (tempSpeed == 1)
                 tempSpeed = 0;
-            // tempSpeed = map(tempSpeed, 0, 1000, 0, 7);
             currentLoco->speed(tempSpeed);
             break;
         case CAN_LOCO_DIREC: // 1 = avant 2 = arriere
@@ -347,19 +347,12 @@ void Message::CRC()
     byte a, b;
     crc = 0x007F;
     for (a = 1; a < buff[0] + 1; a++)
-    {
-        bCRC(buff[a]);
-    } // CRC
+        bCRC(buff[a]); // CRC
     for (a = 0; a < 8; a++)
-    {
-        bCRC(0);
-    } // Krauss p13 "diese bit mÃƒÂ¼ssen zuerst mit 0 belegt ..."}
+        bCRC(0); // Krauss p13 "diese bit mÃƒÂ¼ssen zuerst mit 0 belegt ..."}
     b = 8;
-    for (a = 0; a < 8; a++)
-    {
+    for (a = 0; a < 8; a++, b--)
         buff[len + 1 + a] = bitRead(crc, b - 1);
-        b--;
-    }
     buff[0] += 8; // Length
 }
 
@@ -367,9 +360,7 @@ void Message::bCRC(bool b)
 { // Krauss p13
     crc = (crc << 1) + b;
     if ((crc & 0x0100) > 0)
-    {
         crc = (crc & 0x00FF) ^ 0x07;
-    }
 }
 
 void Message::Turn(int dev, bool val)
@@ -462,4 +453,4 @@ void Message::Tri(int v, int b)
     }
 }
 
-void Message::S88() {}
+//void Message::S88() {}
