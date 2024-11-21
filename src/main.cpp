@@ -24,6 +24,8 @@
 #include "Loco.h"
 #include "Message.h"
 #include "MFXWaveform.h"
+#include "RxTask.h"
+
 
 
 // Central system ID used for identification
@@ -33,7 +35,8 @@ const uint32_t idCentrale = 0x476bb7dc;
 //  Buffers for communication: Rocrail always sends 13 bytes
 //----------------------------------------------------------------------------------------
 
-static const uint8_t BUFFER_S = 13; // Size of communication buffers
+//static const uint8_t BUFFER_S = 13; // Size of communication buffers
+const uint8_t BUFFER_S = 13;        // Size of communication buffers
 uint8_t rxBuffer[BUFFER_S];         // RX buffer for receiving data
 uint8_t txBuffer[BUFFER_S];         // TX buffer for transmitting data
 
@@ -212,26 +215,3 @@ void setup()
 } // End setup
 
 void loop() {}
-
-//----------------------------------------------------------------------------------------
-//   Task for receiving data over TCP
-//----------------------------------------------------------------------------------------
-
-void rxTask(void *pvParameters)
-{
-  Message message;
-  while (true)
-  {
-    if (client.connected() && client.available())
-    {
-      if (client.readBytes(rxBuffer, BUFFER_S) == BUFFER_S)
-      {
-        message.decodeMsg(rxBuffer);
-        message.parse();
-        // xQueueSend(debugQueue, &message, 10);  // send to debug queue
-        // xQueueSend(rxQueue, rxBuffer, 10);
-      }
-    }
-    vTaskDelay(10 / portTICK_PERIOD_MS); // Avoid busy-waiting
-  }
-}
