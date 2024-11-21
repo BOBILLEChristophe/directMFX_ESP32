@@ -40,6 +40,8 @@ LaBox de Locoduino convient parfaitement et apporte une base hard complète et �
 
 <img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
 
+Un grand merci à stefan skrauss qui a réaliser un collossal travail sur le protocole MFX : http://www.skrauss.de/modellbahn/Schienenformat.pdf
+
 ### Contribution
 
 Les contributions sont les bienvenues ! Si vous souhaitez participer, veuillez ouvrir une **issue** ou soumettre une **pull request**.
