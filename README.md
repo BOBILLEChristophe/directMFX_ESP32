@@ -40,6 +40,8 @@ LaBox de Locoduino convient parfaitement et apporte une base hard compl√®te et √
 
 <img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
 
+Voir sur yYoutube : https://www.youtube.com/watch?v=kIXx-TSOVpQ&ab_channel=ChristopheBOBILLE
+
 
 ### Contribution
 
