@@ -29,6 +29,7 @@ void MFXWaveform::setStateMachine(byte state)
 // Tâche de réception de données
 void MFXWaveform::receiverTask(void *parameter)
 {
+    Serial.printf("receiverTask running on core %d\n", xPortGetCoreID());
     byte receivedBuff[BUFFER_SIZE]; // Message reçu
     while (true)
     {
@@ -57,7 +58,6 @@ void MFXWaveform::receiverTask(void *parameter)
     }
 }
 
-
 void MFXWaveform::setup()
 {
     // ptrToClass = this;
@@ -77,16 +77,10 @@ void MFXWaveform::setup()
             ; // Boucle infinie si échec
     }
 
-    // Création de la tâche de réception
-    xTaskCreatePinnedToCore(MFXWaveform::receiverTask, "Receiver Task", 2 * 1024, NULL, 1, NULL, 0);
+    // Running on core 1 because WiFi is running on core 0
+    xTaskCreatePinnedToCore(MFXWaveform::receiverTask, "Receiver Task", 2 * 1024, NULL, 1, NULL, 1);
 }
 
-
-void MFXWaveform::toggleSignal()
-{
-    Centrale::togglePin(m_polarity);
-    m_polarity = !m_polarity;
-} // Change Level
 
 hw_timer_t *MFXWaveform::timer = nullptr;
 portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;

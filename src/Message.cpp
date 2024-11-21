@@ -291,6 +291,8 @@ void Message::parse()
         {
         case CAN_LOCO_SPEED:
             tempSpeed = (data[4] << 8) | data[5];
+            if (tempSpeed > 1000)
+                tempSpeed = 1000;
             tempSpeed = map(tempSpeed, 0, 1000, 0, 127);
             if (tempSpeed == 1)
                 tempSpeed = 0;
@@ -453,4 +455,4 @@ void Message::Tri(int v, int b)
     }
 }
 
-//void Message::S88() {}
+// void Message::S88() {}

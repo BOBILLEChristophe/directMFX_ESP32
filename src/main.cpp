@@ -12,7 +12,7 @@
 #endif
 
 #define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.5"
+#define VERSION "0.7.1"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
@@ -52,20 +52,35 @@ gpio_num_t IN1_pin = GPIO_NUM_27;  // Pin for IN1 of H-Bridge
 gpio_num_t IN2_pin = GPIO_NUM_33;  // Pin for IN2 of H-Bridge
 gpio_num_t EN_pin = GPIO_NUM_32;   // Pin for Enable signal of H-Bridge
 
-const byte nbLocos = 10;  // Maximum number of locomotives
 
 // Pointer to the MFX message queue
 QueueHandle_t mfxQueue;
 
+// Locomotives
+const byte nbLocos = 10;  // Maximum number of locomotives
 Loco *loco[nbLocos];  // Array of locomotive pointers
 
 //----------------------------------------------------------------------------------------
 //  Select a communication mode
 //----------------------------------------------------------------------------------------
 
+// Caution:
+// This note refers to a potential change in the following file:
+// /Users/xxxxx/.platformio/packages/framework-arduinoespressif32/cores/esp32/Server.h:31:18
+//
+// Details:
+// - Original declaration:
+//     virtual void begin() = 0; // For Ethernet
+// - Updated declaration:
+//     virtual void begin(uint16_t port = 0) = 0; // For WiFi
+//
+// Ensure you are aware of this change and update your implementation accordingly.
+
 // Uncomment one of the following modes:
-// #define ETHERNET
+//#define ETHERNET
 #define WIFI
+
+//----------------------------------------------------------------------------------------
 
 // Define IP address and port for the communication server
 IPAddress ip(192, 168, 1, 210);

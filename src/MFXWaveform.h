@@ -17,7 +17,6 @@ class MFXWaveform
 {
 private:
     static bool m_polarity;
-
     static byte buff[BUFFER_SIZE];   // MFX Buffer (type BYTE to store Length)
     static bool bitVal;              // MFX First bit always 1
     static byte bitIdx;              // Interrupt buffer index B[I]);
@@ -44,7 +43,11 @@ public:
     static hw_timer_t *timer;
     static void IRAM_ATTR timerHandler(void);
     static void setup();
-    static void toggleSignal();
     static void receiverTask(void *parameter);
     static void setStateMachine(byte state);
+    static inline void toggleSignal()
+    {
+        Centrale::togglePin(m_polarity);
+        m_polarity = !m_polarity;
+    }
 };
