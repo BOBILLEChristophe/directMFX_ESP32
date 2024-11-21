@@ -12,7 +12,7 @@
 #endif
 
 #define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.7.1"
+#define VERSION "0.7.2"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
@@ -21,6 +21,7 @@
 #include <unordered_map>
 #include <vector>
 #include "Centrale.h"
+#include "CurrentMonitor.h"
 #include "Loco.h"
 #include "Message.h"
 #include "MFXWaveform.h"
@@ -51,6 +52,7 @@ uint16_t rrHash;            // Rocrail hash received from Rocrail system
 gpio_num_t IN1_pin = GPIO_NUM_27;  // Pin for IN1 of H-Bridge
 gpio_num_t IN2_pin = GPIO_NUM_33;  // Pin for IN2 of H-Bridge
 gpio_num_t EN_pin = GPIO_NUM_32;   // Pin for Enable signal of H-Bridge
+gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36;   // Pin for Enable signal of H-Bridge
 
 
 // Pointer to the MFX message queue
@@ -59,6 +61,8 @@ QueueHandle_t mfxQueue;
 // Locomotives
 const byte nbLocos = 10;  // Maximum number of locomotives
 Loco *loco[nbLocos];  // Array of locomotive pointers
+
+CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for current on Main Track
 
 //----------------------------------------------------------------------------------------
 //  Select a communication mode
@@ -123,6 +127,7 @@ QueueHandle_t rxQueue;  // Queue for receiving data
 //----------------------------------------------------------------------------------------
 
 void rxTask(void *pvParameters);  // Task for handling received data
+void currentMonitorTask(void *pvParameters);  // Task for handling current check
 
 void setup()
 {
@@ -222,6 +227,7 @@ void setup()
     xTaskCreatePinnedToCore(rxTask, "RxTask", 4 * 1024, NULL, 5, NULL, 0); // priority 5
     // xTaskCreatePinnedToCore(txTask, "TxTask", 4 * 1024, NULL, 3, NULL, 0);                  // priority 3
     // xTaskCreatePinnedToCore(debugFrameTask, "debugFrameTask", 2 * 1024, NULL, 1, NULL, 0);  // debug task with priority 1 on core 1
+    xTaskCreatePinnedToCore(currentMonitorTask, "CurrentMonitorTask", 1 * 1024, &mainMonitor, 9, NULL, 0); // priority 5
 
     void rxTask(void *pvParameters);
     // void txTask(void *pvParameters);

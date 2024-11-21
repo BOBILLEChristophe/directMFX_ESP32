@@ -18,7 +18,6 @@ extern WiFiClient client;
 extern uint8_t rxBuffer[];
 extern const uint8_t BUFFER_S;
 
-
 void rxTask(void *pvParameters);
 
 #endif // RX_TASK_H
