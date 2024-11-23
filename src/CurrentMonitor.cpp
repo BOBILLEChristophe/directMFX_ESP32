@@ -23,12 +23,10 @@ void currentMonitorTask(void *p)
                          monitor->m_current * (1.0 - CURRENT_SAMPLE_SMOOTHING);
 
     // Vérification si le courant dépasse la limite
-    // Serial.println(monitor->m_current);
     if (monitor->m_current > CURRENT_SAMPLE_MAX)
     {
       Centrale::setPower(false);
-      Serial.println("Current limit exceeded.");
-      Serial.println(monitor->m_current);
+      Serial.printf("Current limit exceeded : %.2fmA\n", monitor->m_current);
       vTaskDelay(5000 / portTICK_PERIOD_MS);
       Centrale::setPower(true);
       monitor->m_current = 0;
@@ -38,3 +36,19 @@ void currentMonitorTask(void *p)
     vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(1));
   }
 }
+
+void currentDisplayTask(void *p)
+{
+    // Récupérer le pointeur vers l'instance de CurrentMonitor
+    CurrentMonitor *monitor = static_cast<CurrentMonitor *>(p);
+
+    for (;;)
+    {
+        // Afficher la valeur du courant
+        Serial.printf("Current measured: %.2f mA\n", monitor->m_current);
+
+        // Attendre une seconde avant la prochaine itération
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+

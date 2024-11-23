@@ -6,13 +6,12 @@
   MFX is a trademark of MARKLIN.
 */
 
-
 #ifndef ARDUINO_ARCH_ESP32
 #error "Select an ESP32 board"
 #endif
 
 #define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.7.2"
+#define VERSION "0.7.5"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
@@ -27,8 +26,6 @@
 #include "MFXWaveform.h"
 #include "RxTask.h"
 
-
-
 // Central system ID used for identification
 const uint32_t idCentrale = 0x476bb7dc;
 
@@ -36,31 +33,30 @@ const uint32_t idCentrale = 0x476bb7dc;
 //  Buffers for communication: Rocrail always sends 13 bytes
 //----------------------------------------------------------------------------------------
 
-//static const uint8_t BUFFER_S = 13; // Size of communication buffers
-const uint8_t BUFFER_S = 13;        // Size of communication buffers
-uint8_t rxBuffer[BUFFER_S];         // RX buffer for receiving data
-uint8_t txBuffer[BUFFER_S];         // TX buffer for transmitting data
+// static const uint8_t BUFFER_S = 13; // Size of communication buffers
+const uint8_t BUFFER_S = 13; // Size of communication buffers
+uint8_t rxBuffer[BUFFER_S];  // RX buffer for receiving data
+uint8_t txBuffer[BUFFER_S];  // TX buffer for transmitting data
 
 //----------------------------------------------------------------------------------------
 //  Märklin-specific hash
 //----------------------------------------------------------------------------------------
 
-//uint16_t thisHash = 0x18FF; // hash
-uint16_t rrHash;            // Rocrail hash received from Rocrail system
+// uint16_t thisHash = 0x18FF; // hash
+uint16_t rrHash; // Rocrail hash received from Rocrail system
 
 // Pins for controlling H-Bridge
-gpio_num_t IN1_pin = GPIO_NUM_27;  // Pin for IN1 of H-Bridge
-gpio_num_t IN2_pin = GPIO_NUM_33;  // Pin for IN2 of H-Bridge
-gpio_num_t EN_pin = GPIO_NUM_32;   // Pin for Enable signal of H-Bridge
-gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36;   // Pin for Enable signal of H-Bridge
-
+gpio_num_t IN1_pin = GPIO_NUM_27;                  // Pin for IN1 of H-Bridge
+gpio_num_t IN2_pin = GPIO_NUM_33;                  // Pin for IN2 of H-Bridge
+gpio_num_t EN_pin = GPIO_NUM_32;                   // Pin for Enable signal of H-Bridge
+gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36; // Pin for Enable signal of H-Bridge
 
 // Pointer to the MFX message queue
 QueueHandle_t mfxQueue;
 
 // Locomotives
-const byte nbLocos = 10;  // Maximum number of locomotives
-Loco *loco[nbLocos];  // Array of locomotive pointers
+const byte nbLocos = 10; // Maximum number of locomotives
+Loco *loco[nbLocos];     // Array of locomotive pointers
 
 CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for current on Main Track
 
@@ -81,7 +77,7 @@ CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for curr
 // Ensure you are aware of this change and update your implementation accordingly.
 
 // Uncomment one of the following modes:
-//#define ETHERNET
+// #define ETHERNET
 #define WIFI
 
 //----------------------------------------------------------------------------------------
@@ -120,14 +116,16 @@ WiFiClient client;
 //  Queues
 //----------------------------------------------------------------------------------------
 
-QueueHandle_t rxQueue;  // Queue for receiving data
+QueueHandle_t rxQueue; // Queue for receiving data
 
 //----------------------------------------------------------------------------------------
 //  Tasks declaration
 //----------------------------------------------------------------------------------------
 
-void rxTask(void *pvParameters);  // Task for handling received data
-void currentMonitorTask(void *pvParameters);  // Task for handling current check
+void rxTask(void *pvParameters);             // Task for handling received data
+void currentMonitorTask(void *pvParameters); // Task for handling current check
+void currentDisplayTask(void *pvParameters);
+
 
 void setup()
 {
@@ -139,7 +137,7 @@ void setup()
   Serial.printf("\nFichier   :    %s", __FILE__);
   Serial.printf("\nCompiled  :    %s", __DATE__);
   Serial.printf(" - %s\n\n", __TIME__);
-  
+
   // Initialize MFXWaveform and Centrale modules
   MFXWaveform::setup();
   Centrale::setup(idCentrale, IN1_pin, IN2_pin, EN_pin);
@@ -211,9 +209,10 @@ void setup()
     Serial.printf("New Client Rocrail : 0x");
     Serial.println(rrHash, HEX);
 
-    //Initialize locomotive instances
+    // Initialize locomotive instances
     loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
-    loco[1] = Loco::createLoco(2, "test", 0x73, 0xF6, 0x88, 0x35);
+    loco[1] = Loco::createLoco(2, "241 A 004", 0x73, 0xE9, 0x2A, 0x0F);
+    loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xFE, 0xBF, 0x74);
 
     // Set up the Message system
     Message::setup(loco, nbLocos);
@@ -228,6 +227,7 @@ void setup()
     // xTaskCreatePinnedToCore(txTask, "TxTask", 4 * 1024, NULL, 3, NULL, 0);                  // priority 3
     // xTaskCreatePinnedToCore(debugFrameTask, "debugFrameTask", 2 * 1024, NULL, 1, NULL, 0);  // debug task with priority 1 on core 1
     xTaskCreatePinnedToCore(currentMonitorTask, "CurrentMonitorTask", 1 * 1024, &mainMonitor, 9, NULL, 0); // priority 5
+    xTaskCreatePinnedToCore(currentDisplayTask, "CurrentDisplayTask", 2048, &mainMonitor, 1, NULL, 0);
 
     void rxTask(void *pvParameters);
     // void txTask(void *pvParameters);
