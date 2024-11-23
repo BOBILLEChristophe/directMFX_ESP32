@@ -40,12 +40,17 @@ LaBox de Locoduino convient parfaitement et apporte une base hard complète et �
 
 <img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
 
+Voir sur yYoutube : https://youtu.be/kIXx-TSOVpQ?si=jwideeNshVRPlX4l
+
+
 ### Contribution
 
 Les contributions sont les bienvenues ! Si vous souhaitez participer, veuillez ouvrir une **issue** ou soumettre une **pull request**.
 
 ### Licence
 
-Ce projet est basé sur un travail qui peut être consulté ici : https://gelit.ch/Train/DirectMFX.ino et https://gelit.ch/Train/MFX.pdf
+Un grand merci à Stefan Skrauss qui a réaliser un collossal travail sur le protocole MFX : http://www.skrauss.de/modellbahn/Schienenformat.pdf
+
+Ce projet est aussi basé sur un travail de Gérald Litzistorf qui peut être consulté ici : https://gelit.ch/Train/DirectMFX.ino et https://gelit.ch/Train/MFX.pdf
 
 
