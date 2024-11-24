@@ -38,13 +38,13 @@ Ce projet propose une centrale numérique **MFX** destinée à piloter des locom
 
 LaBox de Locoduino convient parfaitement et apporte une base hard complète et épprouvée : https://forum.locoduino.org/index.php?topic=1618.msg20062#msg20062
 
-<img src="include/ajout_locomotives.png" alt="ajout_loco" width="1000">
+<img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
 
 Voir sur yYoutube : https://youtu.be/kIXx-TSOVpQ?si=jwideeNshVRPlX4l
 
 ### Pour ajouter vos propres locomotives
 
-<img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
+<img src="include/ajout_locomotives.png" alt="ajout_loco" width="1000">
 
 ### Contribution
 
