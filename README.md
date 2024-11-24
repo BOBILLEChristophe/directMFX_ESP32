@@ -15,13 +15,6 @@ Ce sujet fait l'objet d'un fil sur le forum 3R : https://forum.3rails.fr/t/contr
 - Interface utilisateur via WiFi et Ethernet.
 - Gestion optimisée des ressources grâce à FreeRTOS.
 
-### Matériel requis
-- **ESP32** : Microcontrôleur principal.
-- **Pont en H** (ex : L293D ou équivalent) pour commander les rails.
-- **Source d'alimentation** adaptée à la tension des rails Märklin. (env 18V)
-
-Ce projet propose une centrale numérique **MFX** destinée à piloter des locomotives Märklin au format MFX. Conçue pour fonctionner sur une architecture ESP32, cette solution offre une alternative compacte, performante et personnalisable pour les passionnés de modélisme ferroviaire.
-
 ### Fonctionnalités principales
 
 - **Support du protocole MFX**
@@ -42,6 +35,9 @@ LaBox de Locoduino convient parfaitement et apporte une base hard complète et �
 
 Voir sur yYoutube : https://youtu.be/kIXx-TSOVpQ?si=jwideeNshVRPlX4l
 
+### Pour ajouter vos propres locomotives
+
+<img src="include/ajout_locomotives.png" alt="ajout_loco" width="1000">
 
 ### Contribution
 
