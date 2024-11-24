@@ -12,7 +12,7 @@
 #endif
 
 #define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.7.6"
+#define VERSION "0.7.7"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
