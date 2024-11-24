@@ -42,6 +42,9 @@ LaBox de Locoduino convient parfaitement et apporte une base hard compl√®te et √
 
 Voir sur yYoutube : https://youtu.be/kIXx-TSOVpQ?si=jwideeNshVRPlX4l
 
+### Pour ajouter vos propres locomotives
+
+<img src="include/_DSC1639.jpg" alt="laBox de Locoduino" width="1000">
 
 ### Contribution
 
