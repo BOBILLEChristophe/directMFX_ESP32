@@ -310,7 +310,7 @@ void Message::parse()
         Serial.printf("loco address   : %d\n", currentLoco->addr());
         Serial.printf("loco speed     : %d\n", currentLoco->speed());
         Serial.printf("loco direction : %d\n", currentLoco->dir());
-        Serial.printf("loco light     : %d\n", currentLoco->funct(0));
+        //Serial.printf("loco light     : %d\n", currentLoco->funct(0));
     }
 }
 

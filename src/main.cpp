@@ -2,6 +2,7 @@
   Main.cpp
 
   Source: https://gelit.ch/Train/DirectMFX.ino
+          https://www.skrauss.de/modellbahn/Trackprotocol.pdf
 
   MFX is a trademark of MARKLIN.
 */
@@ -11,7 +12,7 @@
 #endif
 
 #define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.7.5"
+#define VERSION "0.7.6"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
@@ -160,7 +161,7 @@ void setup()
   }
 #endif
 
-// Ethernet-specific initialization
+// Ethernet initialization
 #if defined(ETHERNET)
   Serial.println("Waiting for Ethernet connection : ");
   // Ethernet initialization
@@ -172,7 +173,7 @@ void setup()
   Serial.printf("Port = %d\n", port);
 
 #elif defined(WIFI)
-  // WiFi-specific initialization
+  // WiFi initialization
   WiFi.config(ip, gateway, subnet);
   WiFi.begin(ssid, password);
   Serial.print("Waiting for WiFi connection : \n\n");
