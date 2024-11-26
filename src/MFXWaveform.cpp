@@ -73,7 +73,6 @@ void MFXWaveform::setup()
         while (1)
             ; // Boucle infinie si échec
     }
-
     // Running on core 1 because WiFi is running on core 0
     xTaskCreatePinnedToCore(MFXWaveform::receiverTask, "Receiver Task", 2 * 1024, NULL, 1, NULL, 1);
 }
@@ -89,61 +88,22 @@ void IRAM_ATTR MFXWaveform::timerHandler()
 
         switch (stateMachine)
         {
-        case 1:
-            // État d'attente initial, pas d'action
-            // Devra probablement être viré
-            break;
-        case 3:
-            handleState3();
-            break;
-        case 4:
-            handleState4();
-            break;
         case 10:
             handleState10();
             break;
         case 20:
             handleState20();
             break;
-        // case 30:
-        //     handleState30();
-        //     break;
         }
     }
     portEXIT_CRITICAL_ISR(&timerMux);
 }
 
-void MFXWaveform::handleState3()
-{
-    if (step == 1 || step == 3 || step == 4 || step == 6 || step == 8 || step == 9)
-    {
-        toggleSignal();
-    }
-    else if (step == 10)
-    {
-        nSync++;
-        if (nSync > 1)
-        {
-            step = 0;
-            stateMachine = 4; // Transition vers l'état suivant
-        }
-        else
-            step = 0; // Réinitialisation
-    }
-}
-
-void MFXWaveform::handleState4()
-{
-    if (step == 125)
-        stateMachine = 10; // Passe à l'état d'envoi du premier paquet
-}
 
 void MFXWaveform::handleState10()
 {
-    if (step == 1)
-        toggleSignal();
-    else if (step == 3 || step == 4 || step == 6 || step == 8 || step == 9)
-        toggleSignal();
+    if (step == 1 || step == 3 || step == 4 || step == 6 || step == 8 || step == 9)
+        toggleSignal(); // Stefan Krauss § 2.2.1 Synchronization
 
     else if (step == 10)
     {
@@ -171,7 +131,7 @@ void MFXWaveform::handleState20()
         toggleSignal();
     else
     {
-        if (buff[bitIdx])
+        if (buff[bitIdx]) // == 1
         {
             toggleSignal();
             stuffCount++;
@@ -179,8 +139,7 @@ void MFXWaveform::handleState20()
             {
                 stuffCount = 0;
                 bitVal = 0;
-                // stateMachine = 30; // Transition vers l'état suivant
-                bitVal = !bitVal;  // Inverse le bit F (alternance entre 1 et 0)
+                bitVal = !bitVal; // Inverse le bit F (alternance entre 1 et 0)
             }
         }
         else
@@ -196,12 +155,3 @@ void MFXWaveform::handleState20()
     }
     bitVal = !bitVal;
 }
-
-// void MFXWaveform::handleState30()
-// {
-//     // if (bitVal)         // Si le bit est à 1
-//     //     toggleSignal(); // Envoie un "1"
-//     // else
-//     stateMachine = 20; // Retourne à l'état 20 pour continuer le flux de données
-//     bitVal = !bitVal;  // Inverse le bit F (alternance entre 1 et 0)
-// }

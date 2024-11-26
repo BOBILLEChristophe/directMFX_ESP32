@@ -27,8 +27,8 @@ private:
     static volatile bool receivedMsg;
     static volatile byte stateMachine; // MFX State Machine
 
-    static void handleState3();  // Synchronisation
-    static void handleState4();  // Pause avant le premier paquet
+    //static void handleState3();  // Synchronisation
+    //static void handleState4();  // Pause avant le premier paquet
     static void handleState10(); // Gestion de la synchronisation et des commandes
     static void handleState20(); // Transmission du flux de données
     //static void handleState30(); // Envoi des "0" après le stuffing
