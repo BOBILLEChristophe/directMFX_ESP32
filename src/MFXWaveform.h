@@ -22,21 +22,16 @@ private:
     static byte bitIdx;              // Interrupt buffer index B[I]);
     static byte leng;                // MFX Frame  Length
     static byte step;                // MFX Interrupt
-    static volatile byte Pa[18 + 4]; // MM2 Packet for Turn
     static volatile byte nSync;      // 3 caract de synchro MFX au min
-    static volatile byte stufN;      // Stuffing bit
-    static volatile byte Ti;         // MM2_Bit
+    static volatile byte stuffCount; // Stuffing counter
     static volatile bool receivedMsg;
-    static volatile bool TuCmd;        // Turn Cmd
     static volatile byte stateMachine; // MFX State Machine
 
     static void handleState3();  // Synchronisation
     static void handleState4();  // Pause avant le premier paquet
-    static void handleState5();  // Envoi du premier paquet
-    static void handleState7();  // Envoi du deuxième paquet
     static void handleState10(); // Gestion de la synchronisation et des commandes
     static void handleState20(); // Transmission du flux de données
-    static void handleState30(); // Envoi des "0" après le stuffing
+    //static void handleState30(); // Envoi des "0" après le stuffing
 
 public:
     MFXWaveform() = delete;
