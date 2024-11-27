@@ -3,6 +3,7 @@
 
   Source: https://gelit.ch/Train/DirectMFX.ino
           https://www.skrauss.de/modellbahn/Trackprotocol.pdf
+          https://gelit.ch/Train/MFX.pdf
 
   MFX is a trademark of MARKLIN.
 */
@@ -106,6 +107,7 @@ EthernetClient client;
 // WiFi credentials
 const char *ssid = "**********";
 const char *password = "**********";
+
 IPAddress gateway(192, 168, 1, 1);  // Default gateway
 IPAddress subnet(255, 255, 255, 0); // Subnet mask
 WiFiServer server(port);

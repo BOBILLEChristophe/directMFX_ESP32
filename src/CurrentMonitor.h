@@ -25,7 +25,7 @@ vous devrez utiliser un pont diviseur de tension pour limiter l'entrée à 3,3 V
 */
 
 // La limite est ici fixée à 1A
-#define CURRENT_SAMPLE_MAX 1000 // 1000 mV -> 1 A
+#define MAX_CURRENT 1000 // 1000 mV -> 1 A
 #define CURRENT_SAMPLE_TIME 1
 
 class CurrentMonitor

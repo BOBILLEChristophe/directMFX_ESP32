@@ -23,7 +23,7 @@ void currentMonitorTask(void *p)
                          monitor->m_current * (1.0 - CURRENT_SAMPLE_SMOOTHING);
 
     // Vérification si le courant dépasse la limite
-    if (monitor->m_current > CURRENT_SAMPLE_MAX)
+    if (monitor->m_current > MAX_CURRENT)
     {
       Centrale::setPower(false);
       Serial.printf("Current limit exceeded : %.2fmA\n", monitor->m_current);

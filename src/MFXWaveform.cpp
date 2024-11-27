@@ -139,7 +139,7 @@ void MFXWaveform::handleState20()
             {
                 stuffCount = 0;
                 bitVal = 0;
-                bitVal = !bitVal; // Inverse le bit F (alternance entre 1 et 0)
+                bitVal = !bitVal;
             }
         }
         else
