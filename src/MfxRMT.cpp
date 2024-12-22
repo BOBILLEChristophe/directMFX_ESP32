@@ -14,8 +14,6 @@ rmt_item32_t *RMTChannel::item = (rmt_item32_t *)malloc(MAX_DATA_LEN * sizeof(rm
 byte RMTChannel::itemCount = 0;
 volatile bool RMTChannel::receivedMsg = false;
 byte RMTChannel::buff[BUFFER_SIZE];
-bool RMTChannel::startFrame = false;
-//uint16_t RMTChannel::frameDuration = 0;
 bool RMTChannel::isReady = true;
 bool RMTChannel::level = LOW;
 
@@ -136,7 +134,6 @@ void RMTChannel::receiverTask(void *parameter)
 
 void RMTChannel::sendToCentrale(const byte *buff)
 {
-    startFrame = false;
     byte stuffCount = 0;
     byte endCount = buff[0];
     itemCount = 0;
@@ -148,10 +145,8 @@ void RMTChannel::sendToCentrale(const byte *buff)
         for (byte i = 1; i < MAX_DATA_LEN; i++)
         {
             if (i > endCount + 1)
-            {
-                startFrame = true;
                 break;
-            }
+                
             if (buff[i])
             {
                 setMFXbit1(&item[itemCount++]);
