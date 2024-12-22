@@ -12,6 +12,7 @@
 void rxTask(void *pvParameters)
 {
     Message message;
+    // Serial.println("rx task setup");
     while (true)
     {
         if (client.connected() && client.available())

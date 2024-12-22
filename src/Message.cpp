@@ -36,7 +36,7 @@ void Message::setup(Loco *locoArray[], byte locoCount)
     taskSemaphore = xSemaphoreCreateBinary();
     xSemaphoreGive(taskSemaphore); // Libère le sémaphore pour la première tâche
 
-    xTaskCreatePinnedToCore(periodic, "Periodic", 2 * 1024, (void *)loco, 4, NULL, 0);
+    xTaskCreatePinnedToCore(periodic, "Periodic", 2 * 1024, (void *)loco, 6, NULL, 0);
     xTaskCreatePinnedToCore(centrale, "Centrale", 2 * 1024, (void *)loco, 5, NULL, 0);
     xTaskCreatePinnedToCore(setSID, "SetSID", 2 * 1024, (void *)loco, 5, NULL, 0);
 }
@@ -84,6 +84,12 @@ void Message::periodic(void *p)
 
                     buff[0] = len; // Length in FIRST BYTE
                     CRC();
+
+                    // Serial.println("Message periodic");
+                    // for (auto el : buff)
+                    //     Serial.print(el);
+                    // Serial.println();
+
                     xQueueSend(mfxQueue, &buff, 0);
                 }
                 vTaskDelay(pdMS_TO_TICKS(5));
@@ -262,13 +268,10 @@ void Message::parse()
         {
         case 0x00: // Arrêt du système
             Centrale::setPower(false);
-            Serial.println("power off");
-
             break;
         case 0x01: // Démarrage du système
             Centrale::setPower(true);
-            MFXWaveform::setStateMachine(10);
-            Serial.println("power on");
+            //MFXWaveform::setStateMachine(10);
             break;
         case 0x02: // System Halt
 
@@ -310,7 +313,7 @@ void Message::parse()
         Serial.printf("loco address   : %d\n", currentLoco->addr());
         Serial.printf("loco speed     : %d\n", currentLoco->speed());
         Serial.printf("loco direction : %d\n", currentLoco->dir());
-        //Serial.printf("loco light     : %d\n", currentLoco->funct(0));
+        // Serial.printf("loco light     : %d\n", currentLoco->funct(0));
     }
 }
 
@@ -364,95 +367,3 @@ void Message::bCRC(bool b)
     if ((crc & 0x0100) > 0)
         crc = (crc & 0x00FF) ^ 0x07;
 }
-
-void Message::Turn(int dev, bool val)
-{ // Device value
-    int p[10];
-    int a;
-    int q[10];
-
-    if (dev > 0 && dev < 320)
-    {
-        p[0] = 1;
-        p[1] = 2;
-        p[2] = 1 * 4;
-        p[3] = 3 * 4;
-        p[4] = 3 * 3 * 4;
-        p[5] = 3 * 3 * 3 * 4;
-        p[6] = 3 * 3 * 3 * 3 * 4;
-        dev += 3;
-        for (a = 6; a >= 2; a--)
-        {
-            q[a] = 0;
-            if (dev >= p[a])
-            {
-                q[a]++;
-                dev = dev - p[a];
-            }
-            if (dev >= p[a])
-            {
-                q[a]++;
-                dev = dev - p[a];
-            }
-            switch (a)
-            {
-            case 2:
-                Tri(q[2], 0);
-                break; // MM2 Adr become HIGH adr
-            case 3:
-                Tri(q[3], 2);
-                break;
-            case 4:
-                Tri(q[4], 4);
-                break;
-            case 5:
-                Tri(q[5], 6);
-                break;
-            case 6:
-                Tri(q[6], 8);
-                break;
-            }
-        }
-        for (a = 1; a >= 0; a--)
-        {
-            q[a] = 0;
-            if (dev >= p[a])
-            {
-                q[a]++;
-                dev = dev - p[a];
-            }
-            switch (a)
-            {
-            case 0:
-                Tri(q[0], 12);
-                break; // Factor 4 implemented with bit 12 - 15
-            case 1:
-                Tri(q[1], 14);
-                break;
-            }
-        }
-        Tri(val, 10); // value
-        Tri(1, 16);   // always 1
-    }
-}
-
-void Message::Tri(int v, int b)
-{ // value, Bit
-    switch (v)
-    {
-    case 0:
-        Pa[b] = 0;
-        Pa[b + 1] = 0;
-        break; // MC 145026 encoding
-    case 1:
-        Pa[b] = 1;
-        Pa[b + 1] = 1;
-        break;
-    case 2:
-        Pa[b] = 1;
-        Pa[b + 1] = 0;
-        break;
-    }
-}
-
-// void Message::S88() {}

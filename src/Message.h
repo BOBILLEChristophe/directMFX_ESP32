@@ -13,7 +13,7 @@
 #include "freertos/semphr.h"
 // #include "Centrale.h"
 #include "Loco.h"
-#include "MFXWaveform.h"
+#include "MfxRMT.h"
 
 //----------------------------------------------------------------------------------------
 //  Commandes
@@ -53,17 +53,9 @@ public:
     static void decodeMsg(byte *);
     static void parse();
     static void addr0();
-
     static void addr(byte);
-    // static void setSID(byte);
-    // static void centrale();
-    // static void periodic(byte);
     static void CRC();
     static void bCRC(bool);
-    static void Turn(int, bool);
-    static void Tri(int, int);
-    //static void S88();
-
     static void periodic(void *);
     static void centrale(void *);
     static void setSID(void *);

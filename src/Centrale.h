@@ -19,7 +19,6 @@ private:
     static gpio_num_t IN1_pin;
     static gpio_num_t IN2_pin;
     static gpio_num_t EN_pin;
-
     static bool m_power;
 
 public:

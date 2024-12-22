@@ -12,8 +12,8 @@
 #error "Select an ESP32 board"
 #endif
 
-#define PROJECT "DirectMFX_ESP32"
-#define VERSION "0.8.0"
+#define PROJECT "DirectMFX_ESP32  with RMT"
+#define VERSION "0.9.0"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
@@ -25,8 +25,8 @@
 #include "CurrentMonitor.h"
 #include "Loco.h"
 #include "Message.h"
-#include "MFXWaveform.h"
 #include "RxTask.h"
+#include "MfxRMT.h"
 
 // Central system ID used for identification
 const uint32_t idCentrale = 0x476bb7dc;
@@ -51,14 +51,14 @@ uint16_t rrHash; // Rocrail hash received from Rocrail system
 gpio_num_t IN1_pin = GPIO_NUM_27;                  // Pin for IN1 of H-Bridge
 gpio_num_t IN2_pin = GPIO_NUM_33;                  // Pin for IN2 of H-Bridge
 gpio_num_t EN_pin = GPIO_NUM_32;                   // Pin for Enable signal of H-Bridge
-gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36; // Pin for Enable signal of H-Bridge
+gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36; // Pin for current mesure
 
 // Pointer to the MFX message queue
 QueueHandle_t mfxQueue;
 
 // Locomotives
-const byte nbLocos = 10; // Maximum number of locomotives
-Loco *loco[nbLocos];     // Array of locomotive pointers
+const byte nbLocos = 3; // Maximum number of locomotives
+Loco *loco[nbLocos];    // Array of locomotive pointers
 
 CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for current on Main Track
 
@@ -107,7 +107,6 @@ EthernetClient client;
 // WiFi credentials
 const char *ssid = "**********";
 const char *password = "**********";
-
 IPAddress gateway(192, 168, 1, 1);  // Default gateway
 IPAddress subnet(255, 255, 255, 0); // Subnet mask
 WiFiServer server(port);
@@ -129,7 +128,6 @@ void rxTask(void *pvParameters);             // Task for handling received data
 void currentMonitorTask(void *pvParameters); // Task for handling current check
 void currentDisplayTask(void *pvParameters);
 
-
 void setup()
 {
   Serial.begin(115200);
@@ -140,10 +138,6 @@ void setup()
   Serial.printf("\nFichier   :    %s", __FILE__);
   Serial.printf("\nCompiled  :    %s", __DATE__);
   Serial.printf(" - %s\n\n", __TIME__);
-
-  // Initialize MFXWaveform and Centrale modules
-  MFXWaveform::setup();
-  Centrale::setup(idCentrale, IN1_pin, IN2_pin, EN_pin);
 
   // Create MFX message queue (10 * 'BUFFER_SIZE'(100) octets)
   mfxQueue = xQueueCreate(10, BUFFER_SIZE);
@@ -219,6 +213,9 @@ void setup()
 
     // Set up the Message system
     Message::setup(loco, nbLocos);
+    // Initialize RMTChannel and Centrale modules
+    RMTChannel::setup(IN1_pin, IN2_pin);
+    Centrale::setup(idCentrale, IN1_pin, IN2_pin, EN_pin);
 
     // Create a queue for received data
     rxQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));

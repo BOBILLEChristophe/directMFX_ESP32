@@ -27,25 +27,16 @@ void Centrale::setup(uint32_t uid, gpio_num_t IN1, gpio_num_t IN2, gpio_num_t EN
 
     gpio_set_direction(EN_pin, GPIO_MODE_OUTPUT);
     gpio_set_level(EN_pin, LOW);
-    gpio_set_direction(IN1_pin, GPIO_MODE_OUTPUT);
-    gpio_set_direction(IN2_pin, GPIO_MODE_OUTPUT);
-    gpio_set_level(IN1_pin, LOW);
-    gpio_set_level(IN2_pin, HIGH);
 }
 
 void Centrale::setPower(bool power)
 {
-    Serial.println(power);
+    m_power != m_power;
     if (power)
-    {
         gpio_set_level(EN_pin, HIGH); // Active l'alimentation
-        m_power = true;
-    }
     else
-    {
         gpio_set_level(EN_pin, LOW); // Désactive l'alimentation
-        m_power = false;
-    }
+    Serial.printf("power %s\n", m_power ? "on" : "off");
 }
 
 bool Centrale::power()
