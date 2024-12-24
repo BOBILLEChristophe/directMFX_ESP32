@@ -25,7 +25,7 @@ private:
     // static std::vector<rmt_item32_t> item;
     static bool level;
     //static bool startFrame;
-    static bool isReady;
+    //static bool isReady;
     static rmt_item32_t *item;
     static byte itemCount;
     static volatile bool receivedMsg;

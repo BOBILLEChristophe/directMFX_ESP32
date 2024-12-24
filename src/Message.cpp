@@ -331,7 +331,7 @@ void Message::addr0() // Broadcast
 void Message::addr(byte address)
 {
     /*
-    2.2.4 Structure des trames de données
+    Krauss 2.2.4 Structure des trames de données
 
     10 AAAAAAA : adresse de 7 bits
     110 AAAAAAAAA : adresse de 9 bits

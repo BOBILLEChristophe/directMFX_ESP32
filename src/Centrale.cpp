@@ -31,8 +31,8 @@ void Centrale::setup(uint32_t uid, gpio_num_t IN1, gpio_num_t IN2, gpio_num_t EN
 
 void Centrale::setPower(bool power)
 {
-    m_power != m_power;
-    if (power)
+    m_power = power;
+    if (m_power)
         gpio_set_level(EN_pin, HIGH); // Active l'alimentation
     else
         gpio_set_level(EN_pin, LOW); // Désactive l'alimentation

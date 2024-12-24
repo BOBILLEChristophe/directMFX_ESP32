@@ -14,7 +14,7 @@ rmt_item32_t *RMTChannel::item = (rmt_item32_t *)malloc(MAX_DATA_LEN * sizeof(rm
 byte RMTChannel::itemCount = 0;
 volatile bool RMTChannel::receivedMsg = false;
 byte RMTChannel::buff[BUFFER_SIZE];
-bool RMTChannel::isReady = true;
+//bool RMTChannel::isReady = true;
 bool RMTChannel::level = LOW;
 
 void RMTChannel::setMFXbit1(rmt_item32_t *item)
@@ -122,7 +122,7 @@ void RMTChannel::receiverTask(void *parameter)
     {
         vTaskDelay(1 / portTICK_PERIOD_MS);
         receivedMsg = false;
-        isReady = false;
+        //isReady = false;
         if (xQueueReceive(mfxQueue, (void *)receivedBuff, (TickType_t)0) == pdPASS)
         {
             receivedMsg = true;
@@ -137,8 +137,8 @@ void RMTChannel::sendToCentrale(const byte *buff)
     byte stuffCount = 0;
     byte endCount = buff[0];
     itemCount = 0;
-    for (byte i = 0; i < 3; i++)
-        setMFXsync(item);
+    // for (byte i = 0; i < 3; i++)
+    setMFXsync(item); // Trame de synchro - Krauss 2.2.1 Codage des bits et synchronisation
 
     if (receivedMsg)
     {
@@ -146,7 +146,7 @@ void RMTChannel::sendToCentrale(const byte *buff)
         {
             if (i > endCount + 1)
                 break;
-                
+
             if (buff[i])
             {
                 setMFXbit1(&item[itemCount++]);
@@ -181,5 +181,7 @@ void RMTChannel::sendToCentrale(const byte *buff)
         // }
         // Serial.println();
         rmt_write_items(RMT_CHANNEL_0, item, itemCount - 1, false);
+        /* défini sur false, la fonction retourne immédiatement après avoir initié la transmission,
+        permettant au programme de continuer son exécution sans attendre la fin de l'envoi.*/
     }
 }

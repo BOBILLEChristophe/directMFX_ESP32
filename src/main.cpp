@@ -13,7 +13,7 @@
 #endif
 
 #define PROJECT "DirectMFX_ESP32  with RMT"
-#define VERSION "0.9.0"
+#define VERSION "0.9.1"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
@@ -57,7 +57,7 @@ gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36; // Pin for current mesure
 QueueHandle_t mfxQueue;
 
 // Locomotives
-const byte nbLocos = 3; // Maximum number of locomotives
+const byte nbLocos = 4; // Maximum number of locomotives
 Loco *loco[nbLocos];    // Array of locomotive pointers
 
 CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for current on Main Track
@@ -210,6 +210,7 @@ void setup()
     loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
     loco[1] = Loco::createLoco(2, "241 A 004", 0x73, 0xE9, 0x2A, 0x0F);
     loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xFE, 0xBF, 0x74);
+    loco[3] = Loco::createLoco(5, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
 
     // Set up the Message system
     Message::setup(loco, nbLocos);
