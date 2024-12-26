@@ -14,7 +14,7 @@ rmt_item32_t *RMTChannel::item = (rmt_item32_t *)malloc(MAX_DATA_LEN * sizeof(rm
 byte RMTChannel::itemCount = 0;
 volatile bool RMTChannel::receivedMsg = false;
 byte RMTChannel::buff[BUFFER_SIZE];
-//bool RMTChannel::isReady = true;
+// bool RMTChannel::isReady = true;
 bool RMTChannel::level = LOW;
 
 void RMTChannel::setMFXbit1(rmt_item32_t *item)
@@ -122,7 +122,7 @@ void RMTChannel::receiverTask(void *parameter)
     {
         vTaskDelay(1 / portTICK_PERIOD_MS);
         receivedMsg = false;
-        //isReady = false;
+        // isReady = false;
         if (xQueueReceive(mfxQueue, (void *)receivedBuff, (TickType_t)0) == pdPASS)
         {
             receivedMsg = true;
@@ -142,12 +142,11 @@ void RMTChannel::sendToCentrale(const byte *buff)
 
     if (receivedMsg)
     {
-        for (byte i = 1; i < MAX_DATA_LEN; i++)
+        byte count = 0;
+        do
         {
-            if (i > endCount + 1)
-                break;
-
-            if (buff[i])
+            count++;
+            if (buff[count])
             {
                 setMFXbit1(&item[itemCount++]);
                 stuffCount++;
@@ -164,7 +163,7 @@ void RMTChannel::sendToCentrale(const byte *buff)
                 stuffCount = 0;
                 endCount++;
             }
-        }
+        } while (count < endCount);
     }
     if (itemCount)
     {
@@ -180,7 +179,7 @@ void RMTChannel::sendToCentrale(const byte *buff)
         //         Serial.print("1");
         // }
         // Serial.println();
-        rmt_write_items(RMT_CHANNEL_0, item, itemCount - 1, false);
+        rmt_write_items(RMT_CHANNEL_0, item, itemCount, false);
         /* défini sur false, la fonction retourne immédiatement après avoir initié la transmission,
         permettant au programme de continuer son exécution sans attendre la fin de l'envoi.*/
     }

@@ -104,7 +104,7 @@ void Message::centrale(void *p)
 {
     /*
  3.2.6 Commande 111 101 : centrale
- 111 101 UUUUUUUUUUUUUUUUUUUUUUU ZZZZZZZZZZ
+ 111 101 UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU ZZZZZZZZZZZZZZZZ
  La centrale envoie cette commande à intervalles réguliers avec l'adresse de diffusion (broadcast) 0 indiquant ainsi son UID (U) et le compteur de nouvelles inscriptions (Z).
  */
 
@@ -130,7 +130,8 @@ void Message::centrale(void *p)
                 buff[++len] = (Centrale::gUid() & (1 << b)) >> b;
 
             // Compteur (16 bits)
-            buff[++len] = 1;
+            //buff[++len] = 1; ???
+            buff[++len] = 0;
             buff[++len] = 0;
             buff[++len] = 0;
             buff[++len] = 0;
