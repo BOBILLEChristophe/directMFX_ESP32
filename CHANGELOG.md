@@ -1,0 +1,26 @@
+# Changelog
+
+## 0.10.0 — 2026-10-13
+
+Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without changing the architecture.
+
+### Fixed
+- **MFX re-registration counter** (#1): it was incremented by the default constructor of `Loco`, which `std::unordered_map::operator[]` calls. A Rocrail command for an unknown locomotive changed the counter and made every locomotive on the track register again. The counter now lives in `Centrale`, is sent on 16 bits, is kept in NVS and only changes on request (`Centrale::setCounter()`). Its default value, 5, is the one sent by 0.9.2 with 4 locomotives, so the update does not force a re-registration.
+- **CS2 requests taken as orders** (#2): `data[]` kept the bytes of the previous frame, so a speed or function request (short frame) applied the value of the previous command, often to another locomotive. `data[]` is cleared, and requests no longer change anything.
+- **Direction** (#7): CS2 values 0 (keep) and 3 (toggle) were read as "reverse". 0 keeps, 3 toggles, and a change of direction sets the speed to 0, as a CS2 does.
+- **Unknown locomotives**: `Loco::findLoco()` returns `nullptr` instead of creating a locomotive that was never refreshed; the command is ignored with a message.
+- **Overload** (#3, #4): the monitoring task had 1 KB of stack and printed a float at the moment of the overload (stack overflow). Stack is 4 KB, values are printed as integers. After an overload the track stays off until the next Go from Rocrail; it was powered again after 5 s, endlessly on a persistent short, and even after a Stop.
+- **Current measurement** (#12): read in millivolts (`analogReadMilliVolts()`) and converted to mA with `CURRENT_MV_PER_A`, instead of comparing raw ADC counts to a value written in mV. Check `CURRENT_MV_PER_A` against your board.
+- **Rocrail connection** (#5): the track signal and the tasks start at boot, without waiting for Rocrail. Rocrail can disconnect and reconnect without restarting the command station; the first frame is no longer lost. The network code is in `main.cpp` only, so `RxTask` no longer depends on WiFi.
+- `1 << 31` on an `int` (undefined behaviour) when sending the UID of the command station (#16).
+- The UID and counter of the command station are set before the first broadcast.
+
+### Changed
+- WiFi credentials go in `src/secrets.h`, ignored by Git (copy `src/secrets.h.example`).
+- Removed dead code: second creation of `mfxQueue`, global `data[8]`, `TP` / `T_S88` / `Time`, `Pa[]`, `togglePin()`, `rrHash`, `Loco::zahler` and `locoActive`; unused `ACAN_ESP32` dependency (#15).
+- `.DS_Store` files removed from the repository and ignored.
+- Command traces in `Message::parse()` are printed only when `trace` is true.
+
+## 0.9.2
+
+Version before the audit (commit `f02aa52`).

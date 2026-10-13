@@ -11,7 +11,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-// #include "Centrale.h"
 #include "Loco.h"
 #include "MfxRMT.h"
 
@@ -24,9 +23,6 @@ const byte BUFF_MSG_SIZE = 100;
 #define CAN_LOCO_SPEED 0x04
 #define CAN_LOCO_DIREC 0x05
 #define CAN_LOCO_FUNCT 0x06
-
-class Centrale;
-class MFXWaveform;
 
 class Message
 {
@@ -42,11 +38,8 @@ private:
     static byte buff[BUFF_MSG_SIZE];
     static byte len;
     static uint16_t crc;
-    static long TZ, TP, T_S88, Time;
     static Loco **loco;
     static byte locoSize;
-
-    static byte Pa[18 + 4]; // MM2 Packet for Turn
 
 public:
     static void setup(Loco *locoArray[], byte locoCount);

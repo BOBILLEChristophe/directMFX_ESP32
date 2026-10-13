@@ -5,25 +5,17 @@
 
 */
 
-
 #include "RxTask.h"
-#include <Arduino.h>
 
 void rxTask(void *pvParameters)
 {
-    Message message;
-    // Serial.println("rx task setup");
     while (true)
     {
-        if (client.connected() && client.available())
+        // Reads every complete frame available, then waits a little
+        while (readRocrailFrame(rxBuffer, BUFFER_S))
         {
-            if (client.readBytes(rxBuffer, BUFFER_S) == BUFFER_S)
-            {
-                message.decodeMsg(rxBuffer);
-                message.parse();
-                // xQueueSend(debugQueue, &message, 10);  // send to debug queue
-                // xQueueSend(rxQueue, rxBuffer, 10);
-            }
+            Message::decodeMsg(rxBuffer);
+            Message::parse();
         }
         vTaskDelay(10 / portTICK_PERIOD_MS); // Avoid busy-waiting
     }

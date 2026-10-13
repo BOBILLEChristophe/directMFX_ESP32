@@ -13,14 +13,12 @@
 #endif
 
 #define PROJECT "DirectMFX_ESP32  with RMT"
-#define VERSION "0.9.2"
+#define VERSION "0.10.0"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 
 #include "Arduino.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
-#include <unordered_map>
-#include <vector>
 #include "Centrale.h"
 #include "CurrentMonitor.h"
 #include "Loco.h"
@@ -35,17 +33,8 @@ const uint32_t idCentrale = 0x476bb7dc;
 //  Buffers for communication: Rocrail always sends 13 bytes
 //----------------------------------------------------------------------------------------
 
-// static const uint8_t BUFFER_S = 13; // Size of communication buffers
 const uint8_t BUFFER_S = 13; // Size of communication buffers
 uint8_t rxBuffer[BUFFER_S];  // RX buffer for receiving data
-uint8_t txBuffer[BUFFER_S];  // TX buffer for transmitting data
-
-//----------------------------------------------------------------------------------------
-//  Märklin-specific hash
-//----------------------------------------------------------------------------------------
-
-// uint16_t thisHash = 0x18FF; // hash
-uint16_t rrHash; // Rocrail hash received from Rocrail system
 
 // Pins for controlling H-Bridge
 gpio_num_t IN1_pin = GPIO_NUM_27;                  // Pin for IN1 of H-Bridge
@@ -54,7 +43,7 @@ gpio_num_t EN_pin = GPIO_NUM_32;                   // Pin for Enable signal of H
 gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36; // Pin for current mesure
 
 // Pointer to the MFX message queue
-QueueHandle_t mfxQueue;
+QueueHandle_t mfxQueue = NULL;
 
 // Locomotives
 const byte nbLocos = 4; // Maximum number of locomotives
@@ -104,9 +93,13 @@ EthernetClient client;
 #elif defined(WIFI)
 #include <WiFi.h>
 
-// WiFi credentials
-const char *ssid = "**********";
-const char *password = "**********";
+// WiFi credentials : copy src/secrets.h.example to src/secrets.h and fill it in.
+// secrets.h is ignored by Git, so your password never ends up on GitHub.
+#if __has_include("secrets.h")
+#include "secrets.h"
+#else
+#error "Copy src/secrets.h.example to src/secrets.h and enter your WiFi SSID and password"
+#endif
 IPAddress gateway(192, 168, 1, 1);  // Default gateway
 IPAddress subnet(255, 255, 255, 0); // Subnet mask
 WiFiServer server(port);
@@ -115,10 +108,32 @@ WiFiClient client;
 #endif
 
 //----------------------------------------------------------------------------------------
-//  Queues
+//  Rocrail connection (used by rxTask)
 //----------------------------------------------------------------------------------------
 
-QueueHandle_t rxQueue; // Queue for receiving data
+/*
+ Reads one 13-byte CS2 frame from Rocrail into buf.
+ Accepts a new client whenever there is none, so Rocrail can disconnect and
+ reconnect without restarting the command station.
+ Returns true when a complete frame was read.
+*/
+bool readRocrailFrame(uint8_t *buf, size_t len)
+{
+  if (!client || !client.connected())
+  {
+    if (client)
+      client.stop();
+    client = server.available();
+    if (!client)
+      return false;
+    Serial.println("Rocrail connected.");
+  }
+
+  if (client.available() < (int)len)
+    return false;
+
+  return client.readBytes(buf, len) == len;
+}
 
 //----------------------------------------------------------------------------------------
 //  Tasks declaration
@@ -157,7 +172,32 @@ void setup()
   }
 #endif
 
-// Ethernet initialization
+  //--------------------------------------------------------------------------------------
+  //  Command station: starts at boot, without waiting for Rocrail
+  //--------------------------------------------------------------------------------------
+
+  // Initialize locomotive instances
+  loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
+  loco[1] = Loco::createLoco(2, "241 A 004", 0x73, 0xE9, 0x2A, 0x0F);
+  loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xFE, 0xBF, 0x74);
+  loco[3] = Loco::createLoco(5, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
+
+  // Centrale first: Message::centrale() broadcasts its UID and counter
+  Centrale::setup(idCentrale, EN_pin);
+  Serial.printf("MFX re-registration counter : %u\n", Centrale::counter());
+
+  // Set up the Message system
+  Message::setup(loco, nbLocos);
+  // Initialize RMTChannel
+  RMTChannel::setup(IN1_pin, IN2_pin);
+
+  xTaskCreatePinnedToCore(currentMonitorTask, "CurrentMonitorTask", 4 * 1024, &mainMonitor, 9, NULL, 0);
+  xTaskCreatePinnedToCore(currentDisplayTask, "CurrentDisplayTask", 3 * 1024, &mainMonitor, 1, NULL, 0);
+
+  //--------------------------------------------------------------------------------------
+  //  Network
+  //--------------------------------------------------------------------------------------
+
 #if defined(ETHERNET)
   Serial.println("Waiting for Ethernet connection : ");
   // Ethernet initialization
@@ -188,52 +228,11 @@ void setup()
 
   Serial.printf("\n\nWaiting for connection from Rocrail.\n");
 
-  // Wait for a client connection
-  while (!client)
-    client = server.available();
-
-  // extract the Rocrail hash
-  if (client.connected())
-  {                 // loop while the client's connected
-    int16_t rb = 0; //!\ Do not change type int16_t See https://www.arduino.cc/reference/en/language/functions/communication/stream/streamreadbytes/
-    while (rb != BUFFER_S)
-    {
-      if (client.available()) // if there's bytes to read from the client,
-        rb = client.readBytes(rxBuffer, BUFFER_S);
-    }
-    rrHash = ((rxBuffer[2] << 8) | rxBuffer[3]);
-
-    Serial.printf("New Client Rocrail : 0x");
-    Serial.println(rrHash, HEX);
-
-    // Initialize locomotive instances
-    loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
-    loco[1] = Loco::createLoco(2, "241 A 004", 0x73, 0xE9, 0x2A, 0x0F);
-    loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xFE, 0xBF, 0x74);
-    loco[3] = Loco::createLoco(5, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
-
-    // Set up the Message system
-    Message::setup(loco, nbLocos);
-    // Initialize RMTChannel and Centrale modules
-    RMTChannel::setup(IN1_pin, IN2_pin);
-    Centrale::setup(idCentrale, IN1_pin, IN2_pin, EN_pin);
-
-    // Create a queue for received data
-    rxQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));
-    // txQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));
-    // debugQueue = xQueueCreate(50, BUFFER_SIZE * sizeof(byte));  // Create debug queue
-
-    // Create tasks
-    xTaskCreatePinnedToCore(rxTask, "RxTask", 4 * 1024, NULL, 5, NULL, 0); // priority 5
-    // xTaskCreatePinnedToCore(txTask, "TxTask", 4 * 1024, NULL, 3, NULL, 0);                  // priority 3
-    // xTaskCreatePinnedToCore(debugFrameTask, "debugFrameTask", 2 * 1024, NULL, 1, NULL, 0);  // debug task with priority 1 on core 1
-    xTaskCreatePinnedToCore(currentMonitorTask, "CurrentMonitorTask", 1 * 1024, &mainMonitor, 9, NULL, 0); // priority 5
-    xTaskCreatePinnedToCore(currentDisplayTask, "CurrentDisplayTask", 2048, &mainMonitor, 1, NULL, 0);
-
-    void rxTask(void *pvParameters);
-    // void txTask(void *pvParameters);
-    // void debugFrameTask(void *pvParameters);  // Debug task
-  }
+  // Rocrail frames are read by rxTask, which also accepts (re)connections
+  xTaskCreatePinnedToCore(rxTask, "RxTask", 4 * 1024, NULL, 5, NULL, 0);
 } // End setup
 
-void loop() {}
+void loop()
+{
+  vTaskDelete(NULL); // Everything runs in FreeRTOS tasks
+}

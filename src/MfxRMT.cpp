@@ -103,7 +103,9 @@ void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
     rmt_config(&config);
     rmt_driver_install(config.channel, ESP_INTR_FLAG_LOWMED, ESP_INTR_FLAG_SHARED);
 
-    mfxQueue = xQueueCreate(10, BUFFER_SIZE);
+    // The queue is normally created in setup(); create it here only if it is missing
+    if (mfxQueue == NULL)
+        mfxQueue = xQueueCreate(10, BUFFER_SIZE);
     if (mfxQueue == NULL)
     {
         Serial.println("Error: Unable to create queue");

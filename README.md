@@ -35,6 +35,10 @@ LaBox de Locoduino convient parfaitement et apporte une base hard complète et �
 
 Voir sur yYoutube : https://youtu.be/kIXx-TSOVpQ?si=jwideeNshVRPlX4l
 
+### Configuration du WiFi
+
+Copiez `src/secrets.h.example` en `src/secrets.h`, puis indiquez-y le nom (SSID) et le mot de passe de votre réseau. Ce fichier est ignoré par Git : votre mot de passe ne part jamais sur GitHub.
+
 ### Pour ajouter vos propres locomotives
 
 <img src="include/ajout_locomotives.png" alt="ajout_loco" width="1000">
