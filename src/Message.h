@@ -37,8 +37,6 @@ private:
     static bool trace;         // Debug: internal tasks (very verbose)
     static bool traceCommands; // Commands received from Rocrail
     static byte buff[BUFF_MSG_SIZE];
-    static byte len;
-    static uint16_t crc;
     static Loco **loco;
     static byte locoSize;
 
@@ -48,10 +46,6 @@ public:
     static void setTrace(bool on) { traceCommands = on; }
     static void decodeMsg(byte *);
     static void parse();
-    static void addr0();
-    static void addr(byte);
-    static void CRC();
-    static void bCRC(bool);
     static void periodic(void *);
     static void centrale(void *);
     static void setSID(void *);
