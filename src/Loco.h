@@ -2,8 +2,6 @@
 
 #include <Arduino.h>
 #include <unordered_map>
-#include <vector>
-#include <string>
 
 class Loco
 {
@@ -16,8 +14,7 @@ private:
   String m_name;
 
 public:
- 
-  Loco(); // Constructeur par défaut
+  Loco(); // Constructeur par défaut : ne modifie aucun état global
   Loco(uint8_t, String, uint8_t, uint8_t, uint8_t, uint8_t);
 
   uint8_t UID(uint8_t);
@@ -31,19 +28,15 @@ public:
   void funct(uint32_t, bool);
   uint8_t funct(uint32_t) const;
   void toggleFunct(uint32_t);
-  void name(String);
   String name() const;
 
-  static void addLoco(const Loco& loco);
+  static void addLoco(const Loco &loco);
 
   static std::unordered_map<uint8_t, Loco> locoMap;
+
+  // Renvoie nullptr si aucune loco n'a cette adresse.
   static Loco *findLoco(uint8_t);
-  static uint8_t zahler;
-  static uint8_t locoActive;
 
-  static Loco* createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3) {
-        locoMap[address] = Loco(address, name, uid0, uid1, uid2, uid3);
-        return &locoMap[address];
-    }
-
+  // Crée la loco, ou remplace celle qui a déjà cette adresse.
+  static Loco *createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3);
 };

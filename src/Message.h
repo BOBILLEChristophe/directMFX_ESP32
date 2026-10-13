@@ -11,7 +11,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
-// #include "Centrale.h"
 #include "Loco.h"
 #include "MfxRMT.h"
 
@@ -25,9 +24,6 @@ const byte BUFF_MSG_SIZE = 100;
 #define CAN_LOCO_DIREC 0x05
 #define CAN_LOCO_FUNCT 0x06
 
-class Centrale;
-class MFXWaveform;
-
 class Message
 {
 private:
@@ -38,18 +34,18 @@ private:
     static uint16_t hash;
     static uint8_t length;
     static uint8_t data[8];
-    static bool trace; // Debug
+    static bool trace;         // Debug: internal tasks (very verbose)
+    static bool traceCommands; // Commands received from Rocrail
     static byte buff[BUFF_MSG_SIZE];
     static byte len;
     static uint16_t crc;
-    static long TZ, TP, T_S88, Time;
     static Loco **loco;
     static byte locoSize;
 
-    static byte Pa[18 + 4]; // MM2 Packet for Turn
-
 public:
     static void setup(Loco *locoArray[], byte locoCount);
+    // Prints each command received from Rocrail (speed, direction, functions)
+    static void setTrace(bool on) { traceCommands = on; }
     static void decodeMsg(byte *);
     static void parse();
     static void addr0();
