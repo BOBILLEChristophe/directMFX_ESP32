@@ -47,6 +47,8 @@ public:
     static void decodeMsg(byte *);
     static void parse();
     static void periodic(void *);
+    static void driveFrame(Loco *l, byte *out, size_t outSize);
+    static void sendNow(Loco *l);
     static void centrale(void *);
     static void setSID(void *);
 };

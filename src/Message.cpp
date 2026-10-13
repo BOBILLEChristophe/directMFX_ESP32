@@ -40,6 +40,35 @@ void Message::setup(Loco *locoArray[], byte locoCount)
     xTaskCreatePinnedToCore(setSID, "SetSID", 2 * 1024, (void *)loco, 5, NULL, 0);
 }
 
+/*
+ Drive + functions F0..F15 of a locomotive (Krauss 3.1), in the format of
+ mfxQueue. Used by the periodic refresh and by sendNow().
+*/
+void Message::driveFrame(Loco *l, byte *out, size_t outSize)
+{
+    uint16_t functions = 0;
+    for (byte n = 0; n < 16; n++)
+        if (l->funct(n))
+            functions |= (uint16_t)(1u << n);
+    MfxFrame frame;
+    frame.address(l->addr());
+    frame.drive(l->dir() != 0, l->speed());
+    frame.functions16(functions);
+    frame.finish();
+    frame.toBuffer(out, outSize);
+}
+
+/*
+ A command from Rocrail is sent at once, at the head of the queue, instead
+ of waiting for the next refresh (up to 50 ms). The refresh repeats it.
+*/
+void Message::sendNow(Loco *l)
+{
+    byte frame[BUFF_MSG_SIZE];
+    driveFrame(l, frame, sizeof(frame));
+    xQueueSendToFront(mfxQueue, frame, 0);
+}
+
 void Message::periodic(void *p)
 {
     Loco **loco;
@@ -60,17 +89,7 @@ void Message::periodic(void *p)
                     if (trace)
                         Serial.printf("Periodic- %s\n", loco[i]->name().c_str());
 
-                    // Drive + functions F0..F15 (Krauss 3.1)
-                    uint16_t functions = 0;
-                    for (byte n = 0; n < 16; n++)
-                        if (loco[i]->funct(n))
-                            functions |= (uint16_t)(1u << n);
-                    MfxFrame frame;
-                    frame.address(loco[i]->addr());
-                    frame.drive(loco[i]->dir() != 0, loco[i]->speed());
-                    frame.functions16(functions);
-                    frame.finish();
-                    frame.toBuffer(buff, sizeof(buff));
+                    driveFrame(loco[i], buff, sizeof(buff));
 
                     xQueueSend(mfxQueue, &buff, 0);
                 }
@@ -263,6 +282,13 @@ void Message::parse()
             currentLoco->funct(data[4], data[5] != 0);
         break;
     }
+
+    // An order (not a request) changed the locomotive: send it now
+    const bool order = (cmd == CAN_LOCO_SPEED && length >= 6) ||
+                       (cmd == CAN_LOCO_DIREC && length >= 5) ||
+                       (cmd == CAN_LOCO_FUNCT && length >= 6);
+    if (order)
+        sendNow(currentLoco);
 
     if (traceCommands)
     {
