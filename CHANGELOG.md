@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `MfxFrame` (`lib/MfxFrame`): builds the mfx frames (address on 7, 9, 11 or 14 bits, drive, functions F0-F15, Bind, command station broadcast, CRC). Pure C++, testable on a PC.
+- Unit tests: `pio test -e native`. They check that `MfxFrame` gives exactly the same bits as the code of 0.10.0, and the CRC 0xD9 of a frame seen on an MS2.
+- GitHub Actions: unit tests and ESP32 build on every push and pull request.
+
+### Changed
+- `Message::periodic()`, `centrale()` and `setSID()` build their frames with `MfxFrame`; `addr0()`, `addr()`, `CRC()` and `bCRC()` are removed. The track signal is unchanged.
+- Project renamed **MFX Track Station** (formerly directMFX_ESP32); the startup banner shows the new name.
+- README rewritten: what works today and what remains to do, compilation, Rocrail setup (CS2, port 15731), how to declare a locomotive; duplicated feature list removed.
+
 ## 0.10.0 — 2026-10-13
 
 Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without changing the architecture.
