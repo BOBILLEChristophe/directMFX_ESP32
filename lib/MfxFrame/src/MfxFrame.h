@@ -61,9 +61,9 @@ public:
     // Appends the 8-bit CRC. Call once, after the last command.
     void finish();
 
-    // Number of bits, and bit i (0 = first bit sent).
+    // Number of bits, and bit i (0 = first bit sent). Not named bit(): Arduino.h defines a bit() macro.
     uint8_t size() const { return mSize; }
-    bool bit(uint8_t i) const;
+    bool bitAt(uint8_t i) const;
 
     // True if a command did not fit in MAX_BITS bits.
     bool overflow() const { return mOverflow; }

@@ -211,28 +211,28 @@ void test_address_formats()
     MfxFrame f;
     f.address(127); // 10 + 7 bits
     TEST_ASSERT_EQUAL_UINT8(9, f.size());
-    TEST_ASSERT_TRUE(f.bit(0));
-    TEST_ASSERT_FALSE(f.bit(1));
+    TEST_ASSERT_TRUE(f.bitAt(0));
+    TEST_ASSERT_FALSE(f.bitAt(1));
 
     f.clear();
     f.address(128); // 110 + 9 bits
     TEST_ASSERT_EQUAL_UINT8(12, f.size());
-    TEST_ASSERT_TRUE(f.bit(0));
-    TEST_ASSERT_TRUE(f.bit(1));
-    TEST_ASSERT_FALSE(f.bit(2));
-    TEST_ASSERT_FALSE(f.bit(3)); // 128 on 9 bits = 0 1 0000000
-    TEST_ASSERT_TRUE(f.bit(4));
+    TEST_ASSERT_TRUE(f.bitAt(0));
+    TEST_ASSERT_TRUE(f.bitAt(1));
+    TEST_ASSERT_FALSE(f.bitAt(2));
+    TEST_ASSERT_FALSE(f.bitAt(3)); // 128 on 9 bits = 0 1 0000000
+    TEST_ASSERT_TRUE(f.bitAt(4));
 
     f.clear();
     f.address(2047); // 1110 + 11 bits
     TEST_ASSERT_EQUAL_UINT8(15, f.size());
-    TEST_ASSERT_FALSE(f.bit(3));
+    TEST_ASSERT_FALSE(f.bitAt(3));
 
     f.clear();
     f.address(0x3FFF); // 1111 + 14 bits
     TEST_ASSERT_EQUAL_UINT8(18, f.size());
     for (uint8_t i = 0; i < 18; i++)
-        TEST_ASSERT_TRUE(f.bit(i));
+        TEST_ASSERT_TRUE(f.bitAt(i));
 }
 
 void test_buffer_too_small_and_overflow()

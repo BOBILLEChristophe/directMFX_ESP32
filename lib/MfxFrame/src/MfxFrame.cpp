@@ -28,7 +28,7 @@ void MfxFrame::put(uint32_t value, uint8_t nbits)
     }
 }
 
-bool MfxFrame::bit(uint8_t i) const
+bool MfxFrame::bitAt(uint8_t i) const
 {
     if (i >= mSize)
         return false;
@@ -91,7 +91,7 @@ uint8_t MfxFrame::crc(const MfxFrame &frame, uint8_t nbits)
     uint16_t c = 0x007F;
     for (uint8_t i = 0; i < nbits + 8; i++)
     {
-        const bool b = i < nbits ? frame.bit(i) : false;
+        const bool b = i < nbits ? frame.bitAt(i) : false;
         c = (c << 1) + b;
         if (c & 0x0100)
             c = (c & 0x00FF) ^ 0x07;
@@ -110,6 +110,6 @@ bool MfxFrame::toBuffer(uint8_t *buff, size_t buffSize) const
         return false;
     buff[0] = mSize;
     for (uint8_t i = 0; i < mSize; i++)
-        buff[i + 1] = bit(i) ? 1 : 0;
+        buff[i + 1] = bitAt(i) ? 1 : 0;
     return true;
 }
