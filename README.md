@@ -50,3 +50,9 @@ Un grand merci à Stefan Skrauss qui a réaliser un collossal travail sur le pro
 Ce projet est aussi basé sur un travail de Gérald Litzistorf qui peut être consulté ici : https://gelit.ch/Train/DirectMFX.ino et https://gelit.ch/Train/MFX.pdf
 
 
+
+### Marques
+
+mfx® est une marque déposée de Gebr. Märklin & Cie GmbH. Ce projet est indépendant : il n'est ni affilié à Märklin, ni approuvé ou soutenu par Märklin.
+
+*mfx® is a registered trademark of Gebr. Märklin & Cie GmbH. This project is independent and is not affiliated with, endorsed or sponsored by Märklin.*
