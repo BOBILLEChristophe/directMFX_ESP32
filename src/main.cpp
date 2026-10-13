@@ -1,18 +1,21 @@
 /*
-  Main.cpp
+  MFX Track Station (formerly directMFX_ESP32)
+  https://github.com/BOBILLEChristophe/MFX-Track-Station
+
+  main.cpp
 
   Source: https://gelit.ch/Train/DirectMFX.ino
           https://www.skrauss.de/modellbahn/Trackprotocol.pdf
           https://gelit.ch/Train/MFX.pdf
 
-  MFX is a trademark of MARKLIN.
+  mfx is a registered trademark of Gebr. Marklin & Cie GmbH.
 */
 
 #ifndef ARDUINO_ARCH_ESP32
 #error "Select an ESP32 board"
 #endif
 
-#define PROJECT "DirectMFX_ESP32  with RMT"
+#define PROJECT "MFX Track Station"
 #define VERSION "0.10.0"
 #define AUTHOR "Christophe BOBILLE : christophe.bobille@gmail.com"
 

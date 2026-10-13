@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Project renamed **MFX Track Station** (formerly directMFX_ESP32); the startup banner shows the new name.
+- README rewritten: what works today and what remains to do, compilation, Rocrail setup (CS2, port 15731), how to declare a locomotive; duplicated feature list removed.
+
 ## 0.10.0 — 2026-10-13
 
 Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without changing the architecture.
