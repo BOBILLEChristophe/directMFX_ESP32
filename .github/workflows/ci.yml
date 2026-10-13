@@ -32,4 +32,11 @@ jobs:
       - name: Build for the ESP32
         run: |
           cp src/secrets.h.example src/secrets.h
-          pio run -e esp32dev
+          set -o pipefail
+          if ! pio run -e esp32dev 2>&1 | tee build.log; then
+            # Show the first errors as annotations on the pull request
+            grep -E "error|Error|undefined reference" build.log | head -20 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          fi
