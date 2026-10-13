@@ -25,7 +25,7 @@ Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without c
 - `.DS_Store` files removed from the repository and ignored.
 - Commands received from Rocrail are printed when `Message::setTrace(true)` is called (on by default in `main.cpp`); the very verbose traces of the internal tasks stay under `trace`.
 - A locomotive declared with an address already used prints an error at boot (the second one replaces the first).
-- UID of the 150 X 5 corrected: `FF E9 B1 94`, as seen on the layout with the MS2.
+- UID of the 150 X 5 corrected: `FF E9 B1 94`, as seen on the layout with the MS2. Addresses: 150 X 5 on 5, 040 DE 9 moved to 4.
 
 ## 0.9.2
 

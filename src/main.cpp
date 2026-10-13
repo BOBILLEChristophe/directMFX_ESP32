@@ -181,8 +181,8 @@ void setup()
   // Initialize locomotive instances
   loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
   loco[1] = Loco::createLoco(2, "241 A 004", 0x73, 0xE9, 0x2A, 0x0F);
-  loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xE9, 0xB1, 0x94);
-  loco[3] = Loco::createLoco(5, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
+  loco[2] = Loco::createLoco(5, "150 X 5", 0xFF, 0xE9, 0xB1, 0x94);
+  loco[3] = Loco::createLoco(4, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
 
   // Centrale first: Message::centrale() broadcasts its UID and counter
   Centrale::setup(idCentrale, EN_pin);
