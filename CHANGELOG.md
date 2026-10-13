@@ -16,6 +16,8 @@ Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without c
 - The UID and counter of the command station are set before the first broadcast.
 
 ### Changed
+- Platform pinned to `espressif32@6.9.0` (Arduino core 2.0.17). Unpinned, PlatformIO now takes a platform with the Arduino core 3.x, where the project did not compile.
+- IN2 inversion uses `esp_rom_gpio_pad_select_gpio()` and `esp_rom_gpio_connect_out_signal()`, available in the Arduino cores 2.x and 3.x, instead of `GPIO_PIN_MUX_REG` and `gpio_matrix_out()`, removed from the core 3.x.
 - WiFi credentials go in `src/secrets.h`, ignored by Git (copy `src/secrets.h.example`).
 - Removed dead code: second creation of `mfxQueue`, global `data[8]`, `TP` / `T_S88` / `Time`, `Pa[]`, `togglePin()`, `rrHash`, `Loco::zahler` and `locoActive`; unused `ACAN_ESP32` dependency (#15).
 - `.DS_Store` files removed from the repository and ignored.

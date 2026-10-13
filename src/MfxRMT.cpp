@@ -7,6 +7,7 @@
 */
 
 #include "MfxRMT.h"
+#include "esp_rom_gpio.h" // esp_rom_gpio_pad_select_gpio, esp_rom_gpio_connect_out_signal
 
 #define RMT_CLOCK_DIVIDER 80
 const uint16_t MFX_PERIODE = 50; // 50µs
@@ -95,11 +96,13 @@ void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
     config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
     config.mem_block_num = 2;
 
-    // Signal inversé
+    // Signal inversé : IN2 reçoit la sortie du RMT, inversée par la matrice GPIO.
+    // esp_rom_gpio_* existe avec le core Arduino 2.x (ESP-IDF 4.4) comme 3.x (ESP-IDF 5),
+    // contrairement à GPIO_PIN_MUX_REG et gpio_matrix_out, retirés du core 3.x.
     gpio_num_t gpioNum = (gpio_num_t)(IN2_pin);
-    PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[gpioNum], PIN_FUNC_GPIO);
+    esp_rom_gpio_pad_select_gpio(gpioNum);
     gpio_set_direction(gpioNum, GPIO_MODE_OUTPUT);
-    gpio_matrix_out(gpioNum, RMT_SIG_OUT0_IDX + RMT_CHANNEL_0, true, 0);
+    esp_rom_gpio_connect_out_signal(gpioNum, RMT_SIG_OUT0_IDX + RMT_CHANNEL_0, true, false);
     rmt_config(&config);
     rmt_driver_install(config.channel, ESP_INTR_FLAG_LOWMED, ESP_INTR_FLAG_SHARED);
 
