@@ -2,12 +2,20 @@
 
 ## Unreleased
 
+### Fixed
+- **Bit stuffing sent one bit too many** (new finding): after each inserted 0, the encoder read one more byte after the end of the frame and sent it on the track before the synchronisation. It concerned every frame with 8 consecutive 1 bits, for example the address assignment of the 150 X 5 (UID `FF E9 B1 94`).
+- **Signal gaps** (#6): with nothing to send, the signal task sent a 0.5 ms synchronisation then slept 1 ms, leaving the track about 0.5 ms without transition at the RMT idle level; the level variable ignored this idle level, which could remove the expected transition at the start of the next chunk. The signal is now continuous (see below).
+- The item buffer (100 items) could overflow with a long frame plus stuffing; chunks are now checked against their capacity.
+
 ### Added
+- `MfxSignal` (`lib/MfxSignal`): turns frames into 50 µs half-bits (synchronisation, bits, stuffing) and keeps the track level from one chunk to the next. Pure C++, 5 unit tests.
+- Orders from Rocrail (speed, direction, function) are sent at once, at the head of the queue (`Message::sendNow()`), instead of waiting for the next refresh (up to 50 ms). Requests send nothing.
 - `MfxFrame` (`lib/MfxFrame`): builds the mfx frames (address on 7, 9, 11 or 14 bits, drive, functions F0-F15, Bind, command station broadcast, CRC). Pure C++, testable on a PC.
 - Unit tests: `pio test -e native`. They check that `MfxFrame` gives exactly the same bits as the code of 0.10.0, and the CRC 0xD9 of a frame seen on an MS2.
 - GitHub Actions: unit tests and ESP32 build on every push and pull request.
 
 ### Changed
+- Track signal: one task keeps the RMT busy. It builds the next chunk while the current one is sent (two buffers), and sends synchronisations when there is nothing else, so the signal never stops. Each frame is sent between two synchronisations. The RMT idle level follows the level of the track, so the short pause between two chunks adds no transition. Whole chunks fit in the RMT memory (3 blocks).
 - `Message::periodic()`, `centrale()` and `setSID()` build their frames with `MfxFrame`; `addr0()`, `addr()`, `CRC()` and `bCRC()` are removed. The track signal is unchanged.
 - Project renamed **MFX Track Station** (formerly directMFX_ESP32); the startup banner shows the new name.
 - README rewritten: what works today and what remains to do, compilation, Rocrail setup (CS2, port 15731), how to declare a locomotive; duplicated feature list removed.

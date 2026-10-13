@@ -3,88 +3,29 @@
 
    MfxRMT.cpp
 
+   The track signal must never stop: a decoder expects a transition at least
+   every 100 µs (except inside a synchronisation pattern).
+
+   - signalTask() builds the next chunk while the current one is being sent:
+     rmt_write_items(..., false) waits for the end of the previous chunk, then
+     starts the new one at once.
+   - A chunk is either a frame between two synchronisations, or a single
+     synchronisation when there is nothing to send.
+   - Between two chunks the RMT is briefly idle (a few tens of µs). Its idle
+     level is set to the level of the end of the chunk being sent, so the
+     line keeps its level: no spurious transition, only the last half-bit
+     of a synchronisation is a little longer.
 
 */
 
 #include "MfxRMT.h"
 #include "esp_rom_gpio.h" // esp_rom_gpio_pad_select_gpio, esp_rom_gpio_connect_out_signal
 
-#define RMT_CLOCK_DIVIDER 80
-const uint16_t MFX_PERIODE = 50; // 50µs
-rmt_item32_t *RMTChannel::item = (rmt_item32_t *)malloc(MAX_DATA_LEN * sizeof(rmt_item32_t));
-byte RMTChannel::itemCount = 0;
-volatile bool RMTChannel::receivedMsg = false;
-byte RMTChannel::buff[BUFFER_SIZE];
-// bool RMTChannel::isReady = true;
-bool RMTChannel::level = LOW;
+#define RMT_CLOCK_DIVIDER 80          // 80 MHz / 80 = 1 µs per tick
+static const uint16_t MFX_HALF_US = 50; // half of a bit
 
-void RMTChannel::setMFXbit1(rmt_item32_t *item)
-{
-    level = !level;
-    item->level0 = level;
-    item->duration0 = MFX_PERIODE;
-    level = !level;
-    item->level1 = level;
-    item->duration1 = MFX_PERIODE;
-}
-
-void RMTChannel::setMFXbit0(rmt_item32_t *item)
-{
-    level = !level;
-    item->level0 = level;
-    item->duration0 = MFX_PERIODE;
-    item->level1 = level;
-    item->duration1 = MFX_PERIODE;
-}
-
-void RMTChannel::setMFXsync(rmt_item32_t *item)
-{
-    // Affecte les valeurs au premier élément
-    level = !level; // 1
-    item[itemCount].level0 = level;
-    item[itemCount].duration0 = MFX_PERIODE;
-    item[itemCount].level1 = level;
-    item[itemCount].duration1 = MFX_PERIODE;
-
-    itemCount++;
-
-    // Affecte les valeurs au deuxième élément
-    level = !level; // 0
-    item[itemCount].level0 = level;
-    item[itemCount].duration0 = MFX_PERIODE;
-    level = !level; // 1
-    item[itemCount].level1 = level;
-    item[itemCount].duration1 = MFX_PERIODE;
-
-    itemCount++;
-
-    // Affecte les valeurs au troisième élément
-    item[itemCount].level0 = level;
-    item[itemCount].duration0 = MFX_PERIODE;
-    level = !level; // 0
-    item[itemCount].level1 = level;
-    item[itemCount].duration1 = MFX_PERIODE;
-
-    itemCount++;
-
-    // Affecte les valeurs au quatrième élément
-    item[itemCount].level0 = level;
-    item[itemCount].duration0 = MFX_PERIODE;
-    level = !level; // 1
-    item[itemCount].level1 = level;
-    item[itemCount].duration1 = MFX_PERIODE;
-
-    itemCount++;
-
-    // Affecte les valeurs au cinquième élément
-    level = !level; // 0
-    item[itemCount].level0 = level;
-    item[itemCount].duration0 = MFX_PERIODE;
-    item[itemCount].level1 = level;
-    item[itemCount].duration1 = MFX_PERIODE;
-
-    itemCount++;
-}
+rmt_item32_t RMTChannel::sItems[2][MfxSignal::MAX_ITEMS];
+uint8_t RMTChannel::sCurrent = 0;
 
 void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
 {
@@ -93,8 +34,11 @@ void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
     config.channel = RMT_CHANNEL_0;
     config.clk_div = RMT_CLOCK_DIVIDER;
     config.gpio_num = (gpio_num_t)IN1_pin;
+    config.tx_config.idle_output_en = true;
     config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-    config.mem_block_num = 2;
+    // 3 blocks of 64 items: a whole chunk (MfxSignal::MAX_ITEMS = 154) fits in
+    // the RMT memory, no refill by interrupt during the transmission.
+    config.mem_block_num = 3;
 
     // Signal inversé : IN2 reçoit la sortie du RMT, inversée par la matrice GPIO.
     // esp_rom_gpio_* existe avec le core Arduino 2.x (ESP-IDF 4.4) comme 3.x (ESP-IDF 5),
@@ -104,7 +48,7 @@ void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
     gpio_set_direction(gpioNum, GPIO_MODE_OUTPUT);
     esp_rom_gpio_connect_out_signal(gpioNum, RMT_SIG_OUT0_IDX + RMT_CHANNEL_0, true, false);
     rmt_config(&config);
-    rmt_driver_install(config.channel, ESP_INTR_FLAG_LOWMED, ESP_INTR_FLAG_SHARED);
+    rmt_driver_install(config.channel, 0, ESP_INTR_FLAG_SHARED);
 
     // The queue is normally created in setup(); create it here only if it is missing
     if (mfxQueue == NULL)
@@ -115,77 +59,69 @@ void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
         while (1)
             ;
     }
-    xTaskCreatePinnedToCore(receiverTask, "Receiver Task", 4 * 1024, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(signalTask, "Signal Task", 4 * 1024, NULL, 5, NULL, 1);
 }
 
-// Tâche de réception de données
-void RMTChannel::receiverTask(void *parameter)
+/*
+ Copies the chunk into the free buffer and starts it as soon as the previous
+ chunk has been sent.
+*/
+void RMTChannel::send(const MfxSignal &signal)
 {
-    Serial.printf("Receiver Task running on core %d\n", xPortGetCoreID());
-    byte receivedBuff[BUFFER_SIZE];
-    while (true)
+    rmt_item32_t *items = sItems[sCurrent];
+    const uint16_t n = signal.count();
+    for (uint16_t i = 0; i < n; i++)
     {
-        vTaskDelay(1 / portTICK_PERIOD_MS);
-        receivedMsg = false;
-        // isReady = false;
-        if (xQueueReceive(mfxQueue, (void *)receivedBuff, (TickType_t)0) == pdPASS)
+        const MfxItem &it = signal.item(i);
+        items[i].level0 = it.level0;
+        items[i].duration0 = MFX_HALF_US;
+        items[i].level1 = it.level1;
+        items[i].duration1 = MFX_HALF_US;
+    }
+
+    // Waits for the end of the previous chunk, then starts this one
+    rmt_write_items(RMT_CHANNEL_0, items, n, false);
+
+    // While this chunk is being sent: if the next one is a little late, the
+    // line keeps the level this chunk ends with.
+    rmt_set_idle_level(RMT_CHANNEL_0, true, signal.level() ? RMT_IDLE_LEVEL_HIGH : RMT_IDLE_LEVEL_LOW);
+
+    sCurrent ^= 1; // the other buffer is free again only after this chunk ends
+}
+
+void RMTChannel::signalTask(void *parameter)
+{
+    Serial.printf("Signal task running on core %d\n", xPortGetCoreID());
+
+    static MfxSignal signal; // static: too large for the task stack
+    uint8_t frame[BUFFER_SIZE];
+
+    for (;;)
+    {
+        signal.clear(); // keeps the level reached by the previous chunk
+        const bool startLevel = signal.level();
+
+        if (xQueueReceive(mfxQueue, frame, 0) == pdPASS)
         {
-            receivedMsg = true;
-            memcpy(buff, receivedBuff, BUFFER_SIZE);
+            // Krauss 2.2.1: a frame between two synchronisations
+            signal.sync();
+            signal.frame(frame);
+            signal.sync();
         }
-        sendToCentrale(buff);
-    }
-}
-
-void RMTChannel::sendToCentrale(const byte *buff)
-{
-    byte stuffCount = 0;
-    byte endCount = buff[0];
-    itemCount = 0;
-    // for (byte i = 0; i < 3; i++)
-    setMFXsync(item); // Trame de synchro - Krauss 2.2.1 Codage des bits et synchronisation
-
-    if (receivedMsg)
-    {
-        byte count = 0;
-        do
+        else
         {
-            count++;
-            if (buff[count])
-            {
-                setMFXbit1(&item[itemCount++]);
-                stuffCount++;
-            }
-            else
-            {
-                setMFXbit0(&item[itemCount++]);
-                stuffCount = 0;
-            }
+            // Nothing to send: keep the line alive
+            signal.sync();
+        }
 
-            if (stuffCount == 8)
-            {
-                setMFXbit0(&item[itemCount++]);
-                stuffCount = 0;
-                endCount++;
-            }
-        } while (count < endCount);
-    }
-    if (itemCount)
-    {
-        // for (byte i = 0; i < itemCount; i++)
-        // {
-        //     if (item[i].level0 == 0 && item[i].level1 == 0)
-        //         Serial.print("0");
-        //     if (item[i].level0 == 1 && item[i].level1 == 1)
-        //         Serial.print("0");
-        //     if (item[i].level0 == 1 && item[i].level1 == 0)
-        //         Serial.print("1");
-        //     if (item[i].level0 == 0 && item[i].level1 == 1)
-        //         Serial.print("1");
-        // }
-        // Serial.println();
-        rmt_write_items(RMT_CHANNEL_0, item, itemCount, false);
-        /* défini sur false, la fonction retourne immédiatement après avoir initié la transmission,
-        permettant au programme de continuer son exécution sans attendre la fin de l'envoi.*/
+        if (signal.overflow())
+        {
+            Serial.println("MfxRMT: frame too long, not sent");
+            signal.clear();
+            signal.setLevel(startLevel); // the line is still at this level
+            signal.sync();
+        }
+
+        send(signal);
     }
 }
