@@ -74,8 +74,10 @@ CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for curr
 //----------------------------------------------------------------------------------------
 
 // Define IP address and port for the communication server
+// 15731 is the TCP port of the Marklin CS2, used by default by Rocrail
+// ("CS2" command station). Versions <= 0.9.2 used 2560.
 IPAddress ip(192, 168, 1, 210);
-const uint port = 2560;
+const uint port = 15731;
 
 //----------------------------------------------------------------------------------------
 //  Ethernet configuration (if used)

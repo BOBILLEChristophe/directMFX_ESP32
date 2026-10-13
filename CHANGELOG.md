@@ -16,6 +16,7 @@ Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without c
 - The UID and counter of the command station are set before the first broadcast.
 
 ### Changed
+- TCP port 15731, the port of the Marklin CS2 used by default by Rocrail (it was 2560).
 - Platform pinned to `espressif32@6.9.0` (Arduino core 2.0.17). Unpinned, PlatformIO now takes a platform with the Arduino core 3.x, where the project did not compile.
 - IN2 inversion uses `esp_rom_gpio_pad_select_gpio()` and `esp_rom_gpio_connect_out_signal()`, available in the Arduino cores 2.x and 3.x, instead of `GPIO_PIN_MUX_REG` and `gpio_matrix_out()`, removed from the core 3.x.
 - WiFi credentials go in `src/secrets.h`, ignored by Git (copy `src/secrets.h.example`).

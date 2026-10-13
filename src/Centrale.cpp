@@ -44,8 +44,10 @@ void Centrale::setup(uint32_t uid, gpio_num_t EN)
     m_uid = uid;
     EN_pin = EN;
 
+    // Read-write: a read-only open fails (and logs an error) while the
+    // namespace does not exist yet, i.e. on the first boot.
     Preferences prefs;
-    if (prefs.begin(NVS_NAMESPACE, true))
+    if (prefs.begin(NVS_NAMESPACE, false))
     {
         m_counter = prefs.getUShort(NVS_COUNTER_KEY, DEFAULT_MFX_COUNTER);
         prefs.end();
