@@ -71,7 +71,12 @@ Loco *Loco::createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1,
   Loco loco(address, name, uid0, uid1, uid2, uid3);
   auto it = locoMap.find(address);
   if (it != locoMap.end())
+  {
+    // Two locos with the same address: the second one replaces the first.
+    Serial.printf("ERREUR : adresse %u deja utilisee par %s, remplacee par %s\n",
+                  address, it->second.name().c_str(), name.c_str());
     it->second = loco;
+  }
   else
     it = locoMap.emplace(address, loco).first;
   return &it->second;

@@ -12,6 +12,7 @@ Loco **Message::loco = nullptr;
 byte Message::locoSize = 0;
 
 bool Message::trace = false;
+bool Message::traceCommands = false;
 byte Message::len = 0;
 
 uint32_t Message::id = 0;
@@ -58,7 +59,7 @@ void Message::periodic(void *p)
                 if (loco[i] != nullptr)
                 {
                     if (trace)
-                        Serial.printf("Periodic- %s\n", loco[i]->name());
+                        Serial.printf("Periodic- %s\n", loco[i]->name().c_str());
 
                     len = 0;
                     // adresse loco (7 bits)
@@ -159,7 +160,7 @@ void Message::setSID(void *p)
                 {
 
                     if (trace)
-                        Serial.printf("setSID- %s\n", loco[i]->name());
+                        Serial.printf("setSID- %s\n", loco[i]->name().c_str());
 
                     len = 0;
                     /*
@@ -242,6 +243,8 @@ void Message::parse()
     {
         if (length < 5)
             return;
+        if (traceCommands)
+            Serial.printf("cmd systeme, sous-commande %u\n", data[4]);
         switch (data[4]) // sous-commande
         {
         case 0x00: // Arrêt du système
@@ -313,7 +316,7 @@ void Message::parse()
         break;
     }
 
-    if (trace)
+    if (traceCommands)
     {
         Serial.printf("cmd %u, loco %s (adresse %u) : vitesse %u, direction %u\n",
                       cmd, currentLoco->name().c_str(), currentLoco->addr(),

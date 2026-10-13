@@ -14,6 +14,7 @@ Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without c
 - **Rocrail connection** (#5): the track signal and the tasks start at boot, without waiting for Rocrail. Rocrail can disconnect and reconnect without restarting the command station; the first frame is no longer lost. The network code is in `main.cpp` only, so `RxTask` no longer depends on WiFi.
 - `1 << 31` on an `int` (undefined behaviour) when sending the UID of the command station (#16).
 - The UID and counter of the command station are set before the first broadcast.
+- `printf("%s")` was given a `String` object instead of `const char*` in the traces of `periodic()` and `setSID()` (crash as soon as `trace` was enabled).
 
 ### Changed
 - TCP port 15731, the port of the Marklin CS2 used by default by Rocrail (it was 2560).
@@ -22,7 +23,9 @@ Corrections from the audit of 13 October 2026 (step 1 of the roadmap), without c
 - WiFi credentials go in `src/secrets.h`, ignored by Git (copy `src/secrets.h.example`).
 - Removed dead code: second creation of `mfxQueue`, global `data[8]`, `TP` / `T_S88` / `Time`, `Pa[]`, `togglePin()`, `rrHash`, `Loco::zahler` and `locoActive`; unused `ACAN_ESP32` dependency (#15).
 - `.DS_Store` files removed from the repository and ignored.
-- Command traces in `Message::parse()` are printed only when `trace` is true.
+- Commands received from Rocrail are printed when `Message::setTrace(true)` is called (on by default in `main.cpp`); the very verbose traces of the internal tasks stay under `trace`.
+- A locomotive declared with an address already used prints an error at boot (the second one replaces the first).
+- UID of the 150 X 5 corrected: `FF E9 B1 94`, as seen on the layout with the MS2.
 
 ## 0.9.2
 

@@ -34,7 +34,8 @@ private:
     static uint16_t hash;
     static uint8_t length;
     static uint8_t data[8];
-    static bool trace; // Debug
+    static bool trace;         // Debug: internal tasks (very verbose)
+    static bool traceCommands; // Commands received from Rocrail
     static byte buff[BUFF_MSG_SIZE];
     static byte len;
     static uint16_t crc;
@@ -43,6 +44,8 @@ private:
 
 public:
     static void setup(Loco *locoArray[], byte locoCount);
+    // Prints each command received from Rocrail (speed, direction, functions)
+    static void setTrace(bool on) { traceCommands = on; }
     static void decodeMsg(byte *);
     static void parse();
     static void addr0();
