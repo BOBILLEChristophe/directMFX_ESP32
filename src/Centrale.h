@@ -20,6 +20,7 @@ private:
     static gpio_num_t EN_pin;
     static volatile bool m_power;
     static volatile bool m_overload;
+    static volatile uint32_t m_powerOnMs;
     static portMUX_TYPE m_mux;
 
 public:
@@ -39,6 +40,8 @@ public:
     static void setup(uint32_t, gpio_num_t EN);
     static void setPower(bool);
     static bool power();
+    // Durée depuis la dernière mise sous tension de la voie (ms), 0 si coupée
+    static uint32_t poweredForMs();
     static void setOverload(); // coupe la voie et mémorise la surcharge
     static bool overload();
 };

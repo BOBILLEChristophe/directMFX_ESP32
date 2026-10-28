@@ -8,9 +8,11 @@
 #include "Message.h"
 #include "Centrale.h"
 #include "MfxFrame.h"
+#include "Cs2Config.h"
 
 Loco **Message::loco = nullptr;
-byte Message::locoSize = 0;
+volatile byte Message::locoSize = 0;
+byte Message::locoCapacity = 0;
 
 bool Message::trace = false;
 bool Message::traceCommands = false;
@@ -26,10 +28,11 @@ byte Message::buff[BUFF_MSG_SIZE] = {0};
 
 SemaphoreHandle_t taskSemaphore;
 
-void Message::setup(Loco *locoArray[], byte locoCount)
+void Message::setup(Loco *locoArray[], byte capacity, byte count)
 {
     loco = locoArray;
-    locoSize = locoCount;
+    locoCapacity = capacity;
+    locoSize = count < capacity ? count : capacity;
     trace = false;
 
     taskSemaphore = xSemaphoreCreateBinary();
@@ -38,6 +41,27 @@ void Message::setup(Loco *locoArray[], byte locoCount)
     xTaskCreatePinnedToCore(periodic, "Periodic", 2 * 1024, (void *)loco, 6, NULL, 0);
     xTaskCreatePinnedToCore(centrale, "Centrale", 2 * 1024, (void *)loco, 5, NULL, 0);
     xTaskCreatePinnedToCore(setSID, "SetSID", 2 * 1024, (void *)loco, 5, NULL, 0);
+}
+
+/*
+ Called by the decoder discovery (Discovery.cpp). The periodic tasks read
+ loco[] while they hold taskSemaphore: the new entry is written before the
+ count, under the same semaphore.
+*/
+bool Message::addLoco(Loco *l)
+{
+    bool added = false;
+    if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        if (locoSize < locoCapacity)
+        {
+            loco[locoSize] = l;
+            locoSize = locoSize + 1;
+            added = true;
+        }
+        xSemaphoreGive(taskSemaphore);
+    }
+    return added;
 }
 
 /*
@@ -206,6 +230,18 @@ void Message::parse()
     if (response) // écho ou réponse d'un autre appareil : rien à exécuter
         return;
 
+    if (cmd == CAN_CONFIG_DATA)
+    {
+        configRequest();
+        return;
+    }
+
+    if (cmd == CAN_PING)
+    {
+        pingAnswer();
+        return;
+    }
+
     if (cmd == CAN_SYSTEM_CONTROL)
     {
         if (length < 5)
@@ -229,7 +265,10 @@ void Message::parse()
     }
 
     if (cmd < CAN_LOCO_SPEED || cmd > CAN_LOCO_FUNCT || length < 4)
+    {
+        traceUnknown();
         return;
+    }
 
     const uint8_t address = data[3];
     Loco *currentLoco = Loco::findLoco(address);
@@ -296,4 +335,171 @@ void Message::parse()
                       cmd, currentLoco->name().c_str(), currentLoco->addr(),
                       currentLoco->speed(), currentLoco->dir());
     }
+}
+
+/*
+ A command not handled: printed once per command number (traceCommands),
+ to see what Rocrail asks.
+*/
+void Message::traceUnknown()
+{
+    static uint8_t seen[32] = {0};
+    if (!traceCommands || (seen[cmd >> 3] & (1 << (cmd & 7))))
+        return;
+    seen[cmd >> 3] |= 1 << (cmd & 7);
+    Serial.printf("Rocrail: command 0x%02X not handled (%u bytes:", cmd, length);
+    for (byte i = 0; i < length; i++)
+        Serial.printf(" %02X", data[i]);
+    Serial.println("), printed once");
+}
+
+// One 13-byte CS2 frame: id (big endian), length, 8 data bytes
+static void putFrame(uint8_t *f, uint32_t id, uint8_t len, const uint8_t *d)
+{
+    f[0] = (uint8_t)(id >> 24);
+    f[1] = (uint8_t)(id >> 16);
+    f[2] = (uint8_t)(id >> 8);
+    f[3] = (uint8_t)id;
+    f[4] = len;
+    memset(f + 5, 0, 8);
+    if (len > 8)
+        len = 8;
+    memcpy(f + 5, d, len);
+}
+
+/*
+ Hash of the CS2 protocol for a UID: it replaces the UID in the CAN
+ identifier (bits 7 to 9 at 110, as in the Marklin documentation).
+*/
+static uint16_t cs2Hash(uint32_t uid)
+{
+    uint16_t h = (uint16_t)((uid >> 16) ^ (uid & 0xFFFF));
+    return (uint16_t)(((h << 3) & 0xFC00) | 0x0300 | (h & 0x007F));
+}
+
+/*
+ Command 0x18 (ping): every device of the bus answers with its UID, its
+ software version and its type. The command station answers as the
+ master of a CS2 (type 0xFFFF, version 3.8, as the CS2 GUI emulated in
+ the railroad project): Rocrail then deals with it as with a CS2.
+*/
+void Message::pingAnswer()
+{
+    static bool told = false;
+    const uint32_t uid = Centrale::gUid();
+    const uint8_t d[8] = {(uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8), (uint8_t)uid,
+                          3, 8, 0xFF, 0xFF};
+    uint8_t frame[13];
+    putFrame(frame, ((uint32_t)CAN_PING << 17) | 0x00010000UL | cs2Hash(uid), 8, d);
+    const bool ok = sendToRocrail(frame, sizeof(frame));
+    if (!told)
+    {
+        Serial.printf("Rocrail: ping answered as a CS2 (UID %08lX)%s\n", (unsigned long)uid, ok ? "" : ", not sent");
+        told = true;
+    }
+}
+
+void Message::announceBind(uint32_t uid, uint16_t sid)
+{
+    const uint32_t own = Centrale::gUid();
+    const uint8_t d[6] = {(uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8), (uint8_t)uid,
+                          (uint8_t)(sid >> 8), (uint8_t)sid};
+    uint8_t frames[26];
+    const uint32_t bindId = ((uint32_t)CAN_MFX_BIND << 17) | cs2Hash(own);
+    putFrame(frames, bindId, 6, d);                       // the order (as from an MS2)
+    putFrame(frames + 13, bindId | 0x00010000UL, 6, d);   // the answer (as from the track box)
+    const bool ok = sendToRocrail(frames, sizeof(frames));
+    Serial.printf("Rocrail: bind announced, UID %08lX -> address %u%s\n", (unsigned long)uid, sid,
+                  ok ? "" : " (not connected)");
+}
+
+/*
+ Command 0x20: Rocrail asks for a configuration file, by its name in the 8
+ data bytes. Only "loks" (the loco list) is answered; as a CS2, the
+ request is first sent back with the response bit.
+*/
+void Message::configRequest()
+{
+    char name[9];
+    memcpy(name, data, 8);
+    name[8] = 0;
+    Serial.printf("Rocrail asks for the configuration \"%s\"\n", name);
+
+    uint8_t frame[13];
+    putFrame(frame, id | 0x00010000UL, length, data);
+    sendToRocrail(frame, sizeof(frame));
+
+    if (strcmp(name, "loks") == 0)
+        sendLocoList();
+}
+
+/*
+ The loco list as the file lokomotive.cs2 of a CS2, in a config data
+ stream (Cs2Config.h): a frame of 6 bytes (length, CRC), then the data in
+ frames of 8 bytes, with the hash of the request.
+*/
+void Message::sendLocoList()
+{
+    static const uint8_t MAX = 32;
+    Loco *copies = new Loco[MAX];
+    Cs2Config::Loco *entries = new Cs2Config::Loco[MAX];
+    String *names = new String[MAX];
+    const uint8_t n = Loco::list(copies, MAX);
+    for (uint8_t i = 0; i < n; i++)
+    {
+        names[i] = copies[i].name();
+        Cs2Config::Loco &e = entries[i];
+        memset(&e, 0, sizeof(e));
+        e.name = names[i].c_str();
+        e.sid = copies[i].addr();
+        e.mfxUid = copies[i].uid32();
+        const MfxInfo info = copies[i].mfxInfo();
+        e.haveConfig = info.valid;
+        if (info.valid)
+        {
+            e.av = info.av;
+            e.bv = info.bv;
+            e.vmin = info.vmin;
+            e.vmax = info.vmax;
+            e.tachoMax = info.tachoMax;
+            e.functions = info.functions;
+            memcpy(e.fnType, info.fnType, sizeof(e.fnType));
+        }
+    }
+
+    const size_t textRoom = 200 + (size_t)n * (300 + Cs2Config::FUNCTIONS * 40);
+    char *text = (char *)malloc(textRoom);
+    size_t textLen = text ? Cs2Config::locoFile(entries, n, text, textRoom) : 0;
+    const size_t room = Cs2Config::streamSize(textLen);
+    uint8_t *stream = textLen ? (uint8_t *)malloc(room) : nullptr;
+    uint32_t streamLen = 0;
+    uint16_t crc = 0;
+    const size_t padded = stream ? Cs2Config::stream((const uint8_t *)text, textLen, stream, room, &streamLen, &crc) : 0;
+
+    if (padded)
+    {
+        const uint32_t streamId = (id & 0xFE00FFFFUL) | ((uint32_t)CAN_CONFIG_DATA_STREAM << 17);
+        uint8_t head[6] = {(uint8_t)(streamLen >> 24), (uint8_t)(streamLen >> 16), (uint8_t)(streamLen >> 8),
+                           (uint8_t)streamLen, (uint8_t)(crc >> 8), (uint8_t)crc};
+        uint8_t frames[13 * 16];
+        putFrame(frames, streamId, 6, head);
+        bool ok = sendToRocrail(frames, 13);
+        for (size_t i = 0; ok && i < padded;)
+        {
+            size_t k = 0;
+            for (; k < 16 && i < padded; k++, i += 8)
+                putFrame(frames + 13 * k, streamId, 8, stream + i);
+            ok = sendToRocrail(frames, 13 * k);
+        }
+        Serial.printf("Loco list sent to Rocrail: %u locomotives, %u bytes of text, %u frames%s\n", n,
+                      (unsigned)textLen, (unsigned)(1 + padded / 8), ok ? "" : " (not connected)");
+    }
+    else
+        Serial.println("Loco list: out of memory, not sent");
+
+    free(stream);
+    free(text);
+    delete[] names;
+    delete[] entries;
+    delete[] copies;
 }

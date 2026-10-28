@@ -3,6 +3,17 @@
 #include <Arduino.h>
 #include <unordered_map>
 
+// Configuration read in the mfx decoder (Discovery::readConfig())
+struct MfxInfo
+{
+  bool valid;
+  uint8_t av, bv;     // acceleration, braking (x 0.25 s)
+  uint8_t vmin, vmax;
+  uint16_t tachoMax;  // km/h
+  uint8_t functions;  // functions known (F0 to F15)
+  uint8_t fnType[16]; // CS2 function type (Cs2Config::cs2FunctionType()), 0: none
+};
+
 class Loco
 {
 private:
@@ -12,6 +23,7 @@ private:
   uint8_t m_speed;
   uint8_t m_funct[32];
   String m_name;
+  MfxInfo m_mfx;
 
 public:
   Loco(); // Constructeur par défaut : ne modifie aucun état global
@@ -29,6 +41,13 @@ public:
   uint8_t funct(uint32_t) const;
   void toggleFunct(uint32_t);
   String name() const;
+  void name(const String &name);
+  MfxInfo mfxInfo() const;
+  void mfxInfo(const MfxInfo &info);
+
+  // Copies of the locomotives (at most max), sorted by address. Returns
+  // how many were copied.
+  static uint8_t list(Loco *out, uint8_t max);
 
   static void addLoco(const Loco &loco);
 
@@ -36,6 +55,12 @@ public:
 
   // Renvoie nullptr si aucune loco n'a cette adresse.
   static Loco *findLoco(uint8_t);
+
+  // UID du décodeur sur 32 bits (UID(0) = octet de poids fort)
+  uint32_t uid32() const;
+
+  // Renvoie nullptr si aucune loco n'a ce décodeur.
+  static Loco *findByUid(uint32_t uid);
 
   // Crée la loco, ou remplace celle qui a déjà cette adresse.
   static Loco *createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3);

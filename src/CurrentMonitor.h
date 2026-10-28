@@ -28,6 +28,10 @@ CurrentMonitor.h
 
 #define CURRENT_SAMPLE_TIME 1 // ms
 
+// Affichage du courant sur le port série : seulement après un changement
+// d'au moins cette valeur, en mA (0 : chaque seconde)
+#define CURRENT_DISPLAY_STEP_MA 50
+
 class CurrentMonitor
 {
 public:
