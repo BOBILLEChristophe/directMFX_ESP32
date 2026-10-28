@@ -1,5 +1,7 @@
 # MFX Track Station
 
+*[English version](README.en.md)*
+
 Centrale numérique DIY compatible mfx® sur ESP32, pour piloter des locomotives Märklin au format mfx, sans Gleisbox ni Central Station. Le signal de voie est généré par le périphérique RMT de l'ESP32.
 
 *Anciennement directMFX_ESP32 : les anciens liens redirigent ici.*
@@ -54,6 +56,16 @@ Le +3,3 V et la masse sont ceux de l'ESP32 ; le tore isole le capteur de la voie
 **Retour 1 bit** (`Feedback::ask()`) : après une commande qui attend une réponse (recherche, vérification), la centrale maintient la voie à niveau constant pendant deux fenêtres de 6,4 ms. Un décodeur répond « oui » dans la première en consommant un courant à 52,6 kHz ; la seconde sert de référence pour le bruit. L'ESP32 compte, dans chaque fenêtre, les intervalles d'une période de porteuse (17 à 21 µs) entre deux fronts montants du comparateur (`src/Feedback.cpp`) : une réponse en donne environ 300, le bruit d'un moteur presque aucun, car ses fronts arrivent à intervalles aléatoires. La centrale conclut à une réponse au-delà de 150, avec au moins 120 de plus que dans la fenêtre de référence.
 
 **Lecture des CV** (`Feedback::readCV()`) : la centrale envoie la commande de lecture (`111 000`, numéro de CV, index, nombre d'octets : 1, 2, 4 ou 8), puis une longue pause rythmée par de courtes impulsions (23 toutes les 912 µs, puis toutes les 456 µs). Le décodeur répond pendant toute la pause en inversant la phase de sa porteuse : une inversion à chaque période de 912 µs, et une de plus au milieu pour un bit à 0. L'ESP32 horodate chaque front du comparateur ; `lib/MfxDemod` retrouve les inversions de phase, les bits, les octets, et vérifie la somme de contrôle. Le format a été relevé sur une Gleisbox Märklin et les tests unitaires décodent ces réponses réelles. Au premier allumage de la voie, la centrale lit la configuration de chaque locomotive déclarée (`lib/MfxConfig`, comme la MS2 : table des blocs, nom, fabricant, symboles des fonctions F0 à F15, accélération, freinage, Vmin, Vmax, vitesse du tachymètre) et l'affiche sur le moniteur série ; elle le fait aussi pour chaque nouveau décodeur trouvé. Selon le décodeur, 40 à 60 lectures, une quinzaine de secondes par locomotive : la centrale attend 150 ms entre deux lectures, car répondre chauffe le décodeur. La configuration n'est lue que locomotive arrêtée (le bruit du moteur gênerait la lecture) ; une locomotive qui roule est lue plus tard.
+
+Réponse de la Serie 150X à une lecture de CV, vue à l'oscilloscope (Rigol DS1000Z). En jaune, la sortie du comparateur (GPIO 26) : la porteuse du décodeur, mise en forme. En bleu, GPIO 25 (`Feedback::setScope()`) : haut pendant que l'ESP32 enregistre les fronts.
+
+<img src="include/oscillo_porteuse.jpg" alt="Porteuse de la réponse mesurée aux curseurs : 19,00 µs, 52,63 kHz" width="800">
+
+À 5 µs/div, mesurée aux curseurs : la porteuse a une période de 19,00 µs, soit 52,63 kHz, et une amplitude de 0 à 3,3 V en sortie du comparateur.
+
+<img src="include/oscillo_sauts_de_phase.jpg" alt="Saut de phase au milieu de l'écran, 50 µs/div" width="800">
+
+À 50 µs/div : la fréquence ne change pas, l'information est dans les sauts de phase. Au milieu de l'écran, un créneau plus long décale toute la suite d'une demi-période : c'est un saut de phase. Le décodeur en fait un à chaque limite de bit (toutes les 912 µs), et un de plus au milieu d'un bit à 0.
 
 **Décodeurs essayés** :
 
