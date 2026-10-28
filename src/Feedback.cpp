@@ -17,6 +17,7 @@
 #include "MfxFrame.h"
 #include "driver/pcnt.h"
 #include "esp_timer.h"
+#include "driver/gpio.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -76,6 +77,17 @@ static volatile uint32_t sLastEdge = 0;   // cycles
 static volatile uint16_t sRegular = 0;
 static uint32_t sRegularMin = 17 * 240, sRegularMax = 21 * 240; // cycles, set in setup()
 static volatile uint16_t sWindowRegular = 0;
+
+// Trigger for an oscilloscope (setScope())
+static gpio_num_t sScopePin = GPIO_NUM_NC;
+static Feedback::ScopeMode sScopeMode = Feedback::SCOPE_OFF;
+static inline void scope(bool data, bool level)
+{
+    if (sScopePin == GPIO_NUM_NC)
+        return;
+    if (sScopeMode == Feedback::BOTH || sScopeMode == (data ? Feedback::DATA : Feedback::ONE_BIT))
+        gpio_set_level(sScopePin, level);
+}
 
 static void IRAM_ATTR onEdge()
 {
@@ -171,6 +183,8 @@ void Feedback::onTimer(void *arg)
     {
     case CLEAR_WINDOW:
     case CLEAR_REFERENCE:
+        if (step == CLEAR_WINDOW)
+            scope(false, true);
         pcnt_counter_clear(UNIT);
         sRegular = 0;
         sCountRegular = true;
@@ -184,15 +198,18 @@ void Feedback::onTimer(void *arg)
     case DATA_START:
         sEdgeCount = 0;
         sCapture = sEdges != NULL;
+        scope(true, true);
         break;
     case DATA_END:
         sCapture = false;
+        scope(true, false);
         xSemaphoreGive(sDataDone);
         break;
     case READ_REFERENCE:
     {
         pcnt_get_counter_value(UNIT, &edges);
         sCountRegular = false;
+        scope(false, false);
         Result r = {};
         r.window = sWindowEdges;
         r.reference = edges;
@@ -203,6 +220,21 @@ void Feedback::onTimer(void *arg)
         break;
     }
     }
+}
+
+void Feedback::setScope(gpio_num_t pin, ScopeMode mode)
+{
+    if (sScopePin != GPIO_NUM_NC)
+        gpio_set_level(sScopePin, 0);
+    sScopeMode = mode;
+    sScopePin = mode == SCOPE_OFF ? GPIO_NUM_NC : pin;
+    if (sScopePin == GPIO_NUM_NC)
+        return;
+    gpio_reset_pin(pin);
+    gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+    gpio_set_level(pin, 0);
+    Serial.printf("Feedback: oscilloscope trigger on GPIO %d (%s)\n", (int)pin,
+                  mode == ONE_BIT ? "1-bit feedback" : mode == DATA ? "reading of CVs" : "both");
 }
 
 void Feedback::windowsStarted(int64_t startUs, uint32_t windowUs, uint32_t referenceUs)

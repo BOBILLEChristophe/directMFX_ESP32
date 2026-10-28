@@ -18,6 +18,7 @@
 - `MfxFrame::verify()` (command 111 100, existence query), tested against the example of "Die mfx-Rahmenstruktur". Serial command `V`: verifies every declared locomotive and prints the counts of the 1-bit feedback.
 - The reading of a configuration stops when the track is switched off, and is done again later.
 - Serial command `R` (then Enter): re-registration of every decoder. The re-registration counter is increased (kept in NVS) and the command station restarts; `?` prints the help.
+- Oscilloscope trigger (`Feedback::setScope(pin, mode)`, GPIO 25 in `main.cpp`): the pin is high during the windows of the 1-bit feedback, during the capture of a CV answer, or both.
 - Cleanup of the diagnostics: `Feedback::printPinState()` and the interrupt counts of the 1-bit feedback removed (the trace of the discovery is one line per request, off by default); the current is printed only when it changes by at least 50 mA (`CURRENT_DISPLAY_STEP_MA`); a declared locomotive that does not answer is reported once, after its last try.
 - A new decoder whose configuration was read at its registration is not read a second time with the declared locomotives. Tested: the ESU 150X is found by the search after `R`, gets address 5 and its configuration is read (60 reads, 0 failed), also while an ESU 040 runs at speed 101 on the same track.
 - `Feedback::setTrace(cv, search)`: separate traces for the reading of CVs and for the 1-bit requests of the discovery (both off by default).

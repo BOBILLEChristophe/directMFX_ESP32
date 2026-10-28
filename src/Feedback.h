@@ -96,6 +96,20 @@ public:
         sTraceSearch = search;
     }
 
+    // Trigger for an oscilloscope: the pin goes high during the feedback
+    // windows. ONE_BIT: from the start of the answer window (+200 µs) to the
+    // end of the reference window (about 12.8 ms). DATA: during the capture
+    // of a CV answer (49 ms for 2 bytes, 64 ms for 4). BOTH: either.
+    // The edges come from the esp_timer task: a few tens of µs late at most.
+    enum ScopeMode : uint8_t
+    {
+        SCOPE_OFF,
+        ONE_BIT,
+        DATA,
+        BOTH
+    };
+    static void setScope(gpio_num_t pin, ScopeMode mode);
+
     // --- Used by MfxRMT (signal task) ---
     // Takes the pending request, if any (frame in the format of mfxQueue).
     // dataBytes: 0 for a 1-bit feedback, else the bytes of a data feedback.

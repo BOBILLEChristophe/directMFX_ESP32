@@ -224,6 +224,10 @@ void setup()
   //   each 1-bit request of the automatic discovery (two lines every 2 s).
   // The configuration read in the decoders is printed in any case.
   Feedback::setTrace(false, false);
+  // Trigger for an oscilloscope on GPIO 25 (free pin): high during the
+  // windows of the 1-bit feedback (ONE_BIT), during the answer to a read
+  // CV (DATA), or both (BOTH). SCOPE_OFF: pin not used.
+  Feedback::setScope(GPIO_NUM_25, Feedback::DATA);
 
   // Initialize RMTChannel
   RMTChannel::setup(IN1_pin, IN2_pin);
