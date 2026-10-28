@@ -17,11 +17,6 @@
 #include "MfxFrame.h"
 #include "driver/pcnt.h"
 #include "esp_timer.h"
-#include "driver/gpio.h"
-#include "soc/gpio_periph.h"
-#include "soc/io_mux_reg.h"
-#include "soc/gpio_sig_map.h"
-#include "soc/gpio_reg.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
@@ -36,7 +31,6 @@
 #endif
 
 bool Feedback::sReady = false;
-static gpio_num_t sPin = GPIO_NUM_NC;
 bool Feedback::sTrace = false;
 bool Feedback::sTraceSearch = false;
 
@@ -66,11 +60,6 @@ enum Step : uint8_t
 static esp_timer_handle_t sTimers[STEPS];
 static volatile int16_t sWindowEdges = 0;
 
-// Diagnostic: the edges are also counted by interrupt
-static volatile uint32_t sIrqEdges = 0;
-static volatile uint32_t sIrqStart = 0;
-static volatile uint32_t sIrqWindow = 0;
-static volatile uint32_t sTimerSteps = 0; // steps run since boot
 // Data feedback: times of the rising edges during the pause
 static const uint16_t EDGES_MAX = 6000; // 8 bytes: 93 ms x 52.6 edges/ms, and spare
 static uint32_t *sEdges = NULL;
@@ -90,7 +79,6 @@ static volatile uint16_t sWindowRegular = 0;
 
 static void IRAM_ATTR onEdge()
 {
-    sIrqEdges = sIrqEdges + 1;
     const uint32_t c = CYCLES();
     if (sCountRegular)
     {
@@ -112,7 +100,6 @@ static void IRAM_ATTR onEdge()
 
 void Feedback::setup(gpio_num_t pin)
 {
-    sPin = pin;
     pcnt_config_t cfg = {};
     cfg.pulse_gpio_num = pin;
     cfg.ctrl_gpio_num = PCNT_PIN_NOT_USED;
@@ -180,13 +167,11 @@ void Feedback::onTimer(void *arg)
 {
     const uint8_t step = (uint8_t)(uintptr_t)arg;
     int16_t edges = 0;
-    sTimerSteps = sTimerSteps + 1;
     switch (step)
     {
     case CLEAR_WINDOW:
     case CLEAR_REFERENCE:
         pcnt_counter_clear(UNIT);
-        sIrqStart = sIrqEdges;
         sRegular = 0;
         sCountRegular = true;
         break;
@@ -195,7 +180,6 @@ void Feedback::onTimer(void *arg)
         sCountRegular = false;
         sWindowEdges = edges;
         sWindowRegular = sRegular;
-        sIrqWindow = sIrqEdges - sIrqStart;
         break;
     case DATA_START:
         sEdgeCount = 0;
@@ -215,9 +199,6 @@ void Feedback::onTimer(void *arg)
         r.windowRegular = sWindowRegular;
         r.referenceRegular = sRegular;
         r.answered = false; // decided in ask()
-        r.windowIrq = sIrqWindow;
-        r.referenceIrq = sIrqEdges - sIrqStart;
-        r.measured = true;
         xQueueOverwrite(sResult, &r);
         break;
     }
@@ -311,8 +292,6 @@ bool Feedback::ask(const MfxFrame &frame, Result *result)
     }
 
     xSemaphoreTake(sMutex, portMAX_DELAY);
-    const uint32_t irqBefore = sIrqEdges;
-    const uint32_t stepsBefore = sTimerSteps;
     xQueueReset(sResult);
     xQueueSend(sRequest, &req, 0);
     // The chunk lasts about 30 ms, plus the end of the chunk being sent
@@ -329,13 +308,7 @@ bool Feedback::ask(const MfxFrame &frame, Result *result)
     {
         Serial.printf("Feedback: window %d edges (%u regular), reference %d edges (%u regular) -> %s\n",
                       r.window, r.windowRegular, r.reference, r.referenceRegular,
-                      r.answered ? "answer" : "no answer");
-        Serial.printf("  diag: %s | interrupts window %lu, reference %lu | "
-                      "interrupts during the request %lu | timer steps %lu\n",
-                      r.measured ? "measured" : "NO RESULT (timeout)",
-                      (unsigned long)r.windowIrq, (unsigned long)r.referenceIrq,
-                      (unsigned long)(sIrqEdges - irqBefore),
-                      (unsigned long)(sTimerSteps - stepsBefore));
+                      !done ? "no result (timeout)" : r.answered ? "answer" : "no answer");
     }
     if (result)
         *result = r;
@@ -419,25 +392,4 @@ bool Feedback::readCV(uint16_t sid, uint16_t cv, uint8_t index, uint8_t bytes, u
         Serial.println();
     }
     return ok;
-}
-
-void Feedback::printPinState()
-{
-    static uint32_t lastIrq = 0;
-    if (sPin == GPIO_NUM_NC)
-        return;
-    const uint32_t irq = sIrqEdges;
-    int16_t pcnt = 0;
-    pcnt_get_counter_value(UNIT, &pcnt);
-    // FUN_IE: input buffer of the pad enabled; MCU_SEL: function of the pad (2 = GPIO)
-    const uint32_t mux = REG_READ(GPIO_PIN_MUX_REG[sPin]);
-    // GPIO matrix: which pin feeds the PCNT unit 0 pulse input (0x38 = constant low)
-    const uint32_t pcntIn = REG_READ(GPIO_FUNC0_IN_SEL_CFG_REG + 4 * PCNT_SIG_CH0_IN0_IDX);
-    Serial.printf("Retour GPIO %d : niveau %d | fronts (interruption) %lu en 1 s | PCNT %d | "
-                  "IO_MUX 0x%08lX (entree %s, fonction %lu) | entree PCNT <- GPIO %lu\n",
-                  (int)sPin, gpio_get_level(sPin), (unsigned long)(irq - lastIrq), pcnt,
-                  (unsigned long)mux, (mux & FUN_IE) ? "activee" : "DESACTIVEE",
-                  (unsigned long)((mux >> MCU_SEL_S) & MCU_SEL_V),
-                  (unsigned long)(pcntIn & 0x3F));
-    lastIrq = irq;
 }

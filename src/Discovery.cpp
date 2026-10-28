@@ -209,7 +209,6 @@ bool Discovery::readDeclaredConfigs()
             continue;
         }
         sReadTries[a]++;
-        Serial.printf("Discovery: reading the configuration of address %u (%s)\n", a, l->name().c_str());
         if (readConfig(a))
             sReadTries[a] = READ_TRIES; // done
         else if (sMoving)
@@ -219,9 +218,13 @@ bool Discovery::readDeclaredConfigs()
         }
         else
         {
-            Serial.printf("Discovery: address %u: no answer (try %u of %u)\n", a, sReadTries[a], READ_TRIES);
+            // Printed once, after the last try: absent locomotives would
+            // otherwise give a line every RETRY_MS
             if (sReadTries[a] < READ_TRIES)
                 left = true;
+            else
+                Serial.printf("Discovery: address %u (%s): no answer after %u tries, configuration not read\n",
+                              a, l->name().c_str(), READ_TRIES);
         }
     }
     return !left;

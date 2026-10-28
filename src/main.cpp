@@ -54,7 +54,7 @@ QueueHandle_t mfxQueue = NULL;
 // Locomotives: the declared ones, plus room for the decoders found on the
 // track by the automatic discovery (Discovery.h)
 const byte MAX_LOCOS = 16; // Maximum number of locomotives
-const byte nbLocos = 5;    // Locomotives declared below
+const byte nbLocos = 6;    // Locomotives declared below
 Loco *loco[MAX_LOCOS] = {}; // Array of locomotive pointers
 
 CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for current on Main Track
@@ -205,7 +205,7 @@ void setup()
   loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xE9, 0xB1, 0x94);
   loco[3] = Loco::createLoco(4, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
   loco[4] = Loco::createLoco(8, "150 Y 17 3R", 0x73, 0xFA, 0x74, 0x01);
-  //loco[5] = Loco::createLoco(5, "150 X 5", 0xFF, 0xFE, 0xBF, 0x74);
+  loco[5] = Loco::createLoco(5, "150 X 5", 0xFF, 0xFE, 0xBF, 0x74);
 
   // Centrale first: Message::centrale() broadcasts its UID and counter
   Centrale::setup(idCentrale, EN_pin);
@@ -223,7 +223,7 @@ void setup()
   //   cv = true: one line per CV read; search = true: the edge counts of
   //   each 1-bit request of the automatic discovery (two lines every 2 s).
   // The configuration read in the decoders is printed in any case.
-  Feedback::setTrace(false, true);
+  Feedback::setTrace(false, false);
 
   // Initialize RMTChannel
   RMTChannel::setup(IN1_pin, IN2_pin);

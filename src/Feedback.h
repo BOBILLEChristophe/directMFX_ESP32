@@ -53,11 +53,6 @@ public:
         uint16_t windowRegular;
         uint16_t referenceRegular;
         bool answered;
-        // Diagnostic: the same edges counted by interrupt, and whether the
-        // measurement ran (false: no result, the request timed out)
-        uint32_t windowIrq;
-        uint32_t referenceIrq;
-        bool measured;
     };
 
     // Not counted at the start and at the end of each window, in µs
@@ -94,16 +89,12 @@ public:
 
     // Serial port trace. cv: one line per CV read (and the details of a
     // failed answer). search: the edge counts of each 1-bit request (two
-    // lines every 2 s during the automatic discovery).
+    // lines every 2 s during the automatic discovery). Both off by default.
     static void setTrace(bool cv, bool search = false)
     {
         sTrace = cv;
         sTraceSearch = search;
     }
-
-    // Diagnostic: prints the state of the input pin (level, edges counted by
-    // interrupt and by the PCNT since the last call, input configuration)
-    static void printPinState();
 
     // --- Used by MfxRMT (signal task) ---
     // Takes the pending request, if any (frame in the format of mfxQueue).

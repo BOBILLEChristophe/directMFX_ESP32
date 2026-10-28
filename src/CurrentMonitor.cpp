@@ -53,18 +53,32 @@ void currentMonitorTask(void *p)
   }
 }
 
+/*
+ Affichage du courant : seulement quand il a changé d'au moins
+ CURRENT_DISPLAY_STEP_MA depuis le dernier affichage (une loco démarre, la voie
+ est mise sous tension...), ou quand l'état de surcharge change. Vérifié chaque
+ seconde. CURRENT_DISPLAY_STEP_MA à 0 : affichage chaque seconde, comme avant.
+*/
 void currentDisplayTask(void *p)
 {
   // Récupérer le pointeur vers l'instance de CurrentMonitor
   CurrentMonitor *monitor = static_cast<CurrentMonitor *>(p);
+  long shown = -1000; // rien d'affiché encore
+  bool shownOverload = false;
 
   for (;;)
   {
-    // Afficher la valeur du courant
-    Serial.printf("Courant mesure : %ld mA%s\n", (long)monitor->m_current,
-                  Centrale::overload() ? " (surcharge)" : "");
+    const long mA = (long)monitor->m_current;
+    const bool overload = Centrale::overload();
+    const long change = mA > shown ? mA - shown : shown - mA;
+    if (change >= CURRENT_DISPLAY_STEP_MA || overload != shownOverload)
+    {
+      Serial.printf("Courant mesure : %ld mA%s\n", mA, overload ? " (surcharge)" : "");
+      shown = mA;
+      shownOverload = overload;
+    }
 
-    // Attendre une seconde avant la prochaine itération
+    // Attendre une seconde avant la prochaine vérification
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
