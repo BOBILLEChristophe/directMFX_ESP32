@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 — 2026-10-28
 
-### Added (feedback, under test)
+### Added (feedback)
 - **1-bit feedback** (`src/Feedback.cpp`): `Feedback::ask()` sends a frame followed by the feedback request (11 synchronisations, bits 0011) and two windows of 6.4 ms at constant level. The PCNT counts the rising edges of the sensor comparator in the answer window and in a reference window, from 200 µs after the start of each window (the tuned circuit still rings 60 to 80 µs after the last polarity change). The decision uses the regularity criterion below. Sensor: see the README; comparator output on GPIO 26.
 - 1-bit feedback, regularity criterion: the interrupt also counts, in each window, the intervals of one carrier period (17 to 21 µs) between two rising edges. A decoder answered when the answer window holds at least 150 of them (about 300 for a recorded answer) and at least 120 more than the reference window. The noise of a running motor is mostly at random intervals (0 or 1 regular interval per window at speeds 12 and 63 of an ESU 150X, none at full speed); at speed 101 it gave up to 125 regular intervals, but as many in both windows (difference below 60).
 - **Automatic discovery** (`src/Discovery.cpp`): every 2 s while the track is powered, a decoder search with count 0; if a decoder answers, its UID is read bit by bit (Krauss 3.2.3) and checked. A new decoder gets the first free address, is added to the refresh and receives a Bind; the serial port prints its UID and the line to add to `main.cpp`.
