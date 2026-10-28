@@ -19,8 +19,11 @@
    - The first 200 µs of each window are not counted: the tuned circuit
      still rings after the last polarity change of the track (60 to 80 µs
      measured).
-   - A decoder has answered when the answer window holds many more edges
-     than the reference window.
+   - A decoder has answered when the answer window holds many edges at the
+     carrier period (19 µs apart, timed by the interrupt), and many more than
+     the reference window. The noise of a running motor is mostly at random
+     intervals; at some speeds it gives regular intervals too, but as many
+     in both windows.
 
    Data feedback (readCV(), Krauss 2.2.8 and 2.3.3):
    - readCV() hands a read CV frame to the signal task, which sends it
@@ -45,6 +48,10 @@ public:
     {
         int16_t window;    // rising edges in the answer window
         int16_t reference; // rising edges in the reference window
+        // Intervals of one carrier period (17 to 21 µs) between two rising
+        // edges: about 300 for an answer, few for the noise of a motor
+        uint16_t windowRegular;
+        uint16_t referenceRegular;
         bool answered;
         // Diagnostic: the same edges counted by interrupt, and whether the
         // measurement ran (false: no result, the request timed out)
@@ -56,8 +63,16 @@ public:
     // Not counted at the start and at the end of each window, in µs
     static const uint32_t SKIP_START_US = 200;
     static const uint32_t SKIP_END_US = 100;
-    // About 52.6 edges per ms over 6.1 ms: 320 for a full answer
-    static const int16_t ANSWER_MIN_EDGES = 100;
+    // About 52.6 edges per ms over 6.1 ms: 320 for a full answer, of which
+    // about 300 at regular intervals (measured on recorded answers).
+    // A motor at some speeds (150X at speed 101) gives up to 125 regular
+    // intervals in both windows; their difference stayed below 60.
+    static const uint16_t ANSWER_MIN_REGULAR = 150; // in the answer window
+    static const uint16_t ANSWER_MARGIN = 120;      // more than in the reference
+
+    // Pause between two reads of CVs (Krauss 4.9: about 120 ms for the
+    // first ESU decoders), in ms
+    static const uint32_t READ_PAUSE_MS = 150;
 
     Feedback() = delete;
 
@@ -77,8 +92,14 @@ public:
     // Blocks about 60 to 250 ms. Several tasks may call it.
     static bool readCV(uint16_t sid, uint16_t cv, uint8_t index, uint8_t bytes, uint8_t *out);
 
-    // Prints the edge counts of each request on the serial port
-    static void setTrace(bool on) { sTrace = on; }
+    // Serial port trace. cv: one line per CV read (and the details of a
+    // failed answer). search: the edge counts of each 1-bit request (two
+    // lines every 2 s during the automatic discovery).
+    static void setTrace(bool cv, bool search = false)
+    {
+        sTrace = cv;
+        sTraceSearch = search;
+    }
 
     // Diagnostic: prints the state of the input pin (level, edges counted by
     // interrupt and by the PCNT since the last call, input configuration)
@@ -102,5 +123,6 @@ private:
     static bool readOnce(const uint8_t *frame, uint8_t bytes, uint8_t *out);
 
     static bool sReady;
-    static bool sTrace;
+    static bool sTrace;       // reading of CVs
+    static bool sTraceSearch; // 1-bit feedback
 };

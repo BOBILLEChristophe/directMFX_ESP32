@@ -32,6 +32,7 @@ Loco::Loco() : m_addr(0), m_dir(0), m_speed(0), m_name("")
 {
   memset(m_uid, 0, sizeof(m_uid));
   memset(m_funct, 0, sizeof(m_funct));
+  memset(&m_mfx, 0, sizeof(m_mfx));
 }
 
 Loco::Loco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3)
@@ -42,6 +43,7 @@ Loco::Loco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid
       m_name(name)
 {
   memset(m_funct, 0, sizeof(m_funct));
+  memset(&m_mfx, 0, sizeof(m_mfx));
 }
 
 byte Loco::UID(byte i) { return i < 4 ? m_uid[i] : 0; }
@@ -64,6 +66,39 @@ void Loco::toggleFunct(uint32_t x)
     m_funct[x] ^= 1;
 }
 String Loco::name() const { return m_name; }
+
+// The name and the configuration are written by the discovery task while
+// the Rocrail task may copy the list: under the mutex of the map.
+void Loco::name(const String &name)
+{
+  MapLock lock;
+  m_name = name;
+}
+
+MfxInfo Loco::mfxInfo() const
+{
+  MapLock lock;
+  return m_mfx;
+}
+
+void Loco::mfxInfo(const MfxInfo &info)
+{
+  MapLock lock;
+  m_mfx = info;
+}
+
+uint8_t Loco::list(Loco *out, uint8_t max)
+{
+  MapLock lock;
+  uint8_t n = 0;
+  for (uint16_t a = 0; a < 256 && n < max; a++)
+  {
+    auto it = locoMap.find((uint8_t)a);
+    if (it != locoMap.end())
+      out[n++] = it->second;
+  }
+  return n;
+}
 
 void Loco::addLoco(const Loco &loco)
 {

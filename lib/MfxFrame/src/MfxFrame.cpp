@@ -72,6 +72,12 @@ void MfxFrame::functions16(uint16_t mask)
     put(mask, 16); // F15 first, F0 last
 }
 
+void MfxFrame::verify(uint32_t uid)
+{
+    put(0b111100, 6);
+    put(uid, 32);
+}
+
 void MfxFrame::bind(uint16_t sid, uint32_t uid)
 {
     put(0b111011, 6);

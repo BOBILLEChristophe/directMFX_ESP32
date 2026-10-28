@@ -12,6 +12,7 @@ uint32_t Centrale::m_uid = 0;
 uint16_t Centrale::m_counter = Centrale::DEFAULT_MFX_COUNTER;
 gpio_num_t Centrale::EN_pin = GPIO_NUM_0;
 volatile bool Centrale::m_power = false;
+volatile uint32_t Centrale::m_powerOnMs = 0;
 volatile bool Centrale::m_overload = false;
 portMUX_TYPE Centrale::m_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -62,10 +63,13 @@ void Centrale::setup(uint32_t uid, gpio_num_t EN)
 */
 void Centrale::setPower(bool power)
 {
+    const bool wasOn = m_power;
     portENTER_CRITICAL(&m_mux);
     m_power = power;
     if (power)
         m_overload = false;
+    if (power && !wasOn)
+        m_powerOnMs = millis();
     gpio_set_level(EN_pin, power ? HIGH : LOW);
     portEXIT_CRITICAL(&m_mux);
     Serial.printf("power %s\n", power ? "on" : "off");
@@ -74,6 +78,14 @@ void Centrale::setPower(bool power)
 bool Centrale::power()
 {
     return m_power;
+}
+
+uint32_t Centrale::poweredForMs()
+{
+    if (!m_power)
+        return 0;
+    const uint32_t d = millis() - m_powerOnMs;
+    return d ? d : 1;
 }
 
 /*

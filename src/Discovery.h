@@ -14,10 +14,12 @@
    receives its address (Bind). The serial port prints its UID and the line
    to add to main.cpp to keep it after a restart.
 
-   The name of the locomotive is then read in the decoder (CV 003, Krauss
-   6.3.2), and printed with the line for main.cpp. When the track is first
-   powered, the names of the locomotives declared in main.cpp are read as
-   well: a test of the reading of CVs.
+   The configuration of the decoder is then read through its CVs (MfxConfig:
+   name, manufacturer, symbols of the functions, driving parameters) and
+   printed, with the line for main.cpp. When the track is first powered,
+   the configuration of each locomotive declared in main.cpp is read as
+   well (3 s after the track is on, then twice more, 20 s apart, for the
+   decoders that did not answer): a test of the reading of CVs.
 
    Needs the feedback sensor (Feedback.h).
 
@@ -37,15 +39,14 @@ public:
     // decoder answers, or if the UID found does not answer the check.
     static bool findUid(uint32_t *uid);
 
-    // Reads the name of the locomotive in the decoder at rail address sid:
-    // CV 003, index 01 on, 4 bytes at a time, up to 16 characters.
-    // name receives a null-terminated text. Returns false if the decoder
-    // does not answer.
-    static bool readName(uint16_t sid, char *name, size_t size);
+    // Reads the configuration of the decoder at rail address sid and prints
+    // it. Returns false if the decoder does not answer. name (optional)
+    // receives the name read, null-terminated.
+    static bool readConfig(uint16_t sid, char *name = nullptr, size_t size = 0);
 
 private:
     static void task(void *);
     static bool probe(uint8_t count, uint32_t uid);
     static void registerDecoder(uint32_t uid);
-    static void readDeclaredNames();
+    static bool readDeclaredConfigs();
 };

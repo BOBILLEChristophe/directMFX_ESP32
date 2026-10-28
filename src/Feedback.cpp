@@ -38,6 +38,7 @@
 bool Feedback::sReady = false;
 static gpio_num_t sPin = GPIO_NUM_NC;
 bool Feedback::sTrace = false;
+bool Feedback::sTraceSearch = false;
 
 static const pcnt_unit_t UNIT = PCNT_UNIT_0;
 
@@ -78,15 +79,32 @@ static volatile bool sCapture = false;
 static SemaphoreHandle_t sDataDone = NULL; // given at the end of the pause
 static MfxDemod sDemod;                    // used under sMutex
 
+// 1-bit feedback: intervals of one carrier period (17 to 21 µs) between
+// two rising edges, counted in each window. The noise of a running motor
+// gives many edges, but at random intervals.
+static volatile bool sCountRegular = false;
+static volatile uint32_t sLastEdge = 0;   // cycles
+static volatile uint16_t sRegular = 0;
+static uint32_t sRegularMin = 17 * 240, sRegularMax = 21 * 240; // cycles, set in setup()
+static volatile uint16_t sWindowRegular = 0;
+
 static void IRAM_ATTR onEdge()
 {
     sIrqEdges = sIrqEdges + 1;
+    const uint32_t c = CYCLES();
+    if (sCountRegular)
+    {
+        const uint32_t dt = c - sLastEdge;
+        if (dt >= sRegularMin && dt <= sRegularMax)
+            sRegular = sRegular + 1;
+    }
+    sLastEdge = c;
     if (sCapture)
     {
         const uint16_t n = sEdgeCount;
         if (n < EDGES_MAX)
         {
-            sEdges[n] = CYCLES();
+            sEdges[n] = c;
             sEdgeCount = n + 1;
         }
     }
@@ -132,6 +150,9 @@ void Feedback::setup(gpio_num_t pin)
         }
     }
 
+    const uint32_t mhz = getCpuFrequencyMhz();
+    sRegularMin = 17 * mhz;
+    sRegularMax = 21 * mhz;
     pinMode(pin, INPUT);
     attachInterrupt(digitalPinToInterrupt(pin), onEdge, RISING);
 
@@ -166,10 +187,14 @@ void Feedback::onTimer(void *arg)
     case CLEAR_REFERENCE:
         pcnt_counter_clear(UNIT);
         sIrqStart = sIrqEdges;
+        sRegular = 0;
+        sCountRegular = true;
         break;
     case READ_WINDOW:
         pcnt_get_counter_value(UNIT, &edges);
+        sCountRegular = false;
         sWindowEdges = edges;
+        sWindowRegular = sRegular;
         sIrqWindow = sIrqEdges - sIrqStart;
         break;
     case DATA_START:
@@ -183,9 +208,12 @@ void Feedback::onTimer(void *arg)
     case READ_REFERENCE:
     {
         pcnt_get_counter_value(UNIT, &edges);
+        sCountRegular = false;
         Result r = {};
         r.window = sWindowEdges;
         r.reference = edges;
+        r.windowRegular = sWindowRegular;
+        r.referenceRegular = sRegular;
         r.answered = false; // decided in ask()
         r.windowIrq = sIrqWindow;
         r.referenceIrq = sIrqEdges - sIrqStart;
@@ -293,11 +321,15 @@ bool Feedback::ask(const MfxFrame &frame, Result *result)
         xQueueReset(sRequest); // never sent
     xSemaphoreGive(sMutex);
 
-    r.answered = done && r.window >= ANSWER_MIN_EDGES && r.window > 4 * r.reference;
-    if (sTrace)
+    // An answer: many intervals of one carrier period in the answer window,
+    // clearly more than in the reference window (no answer expected there)
+    r.answered = done && r.windowRegular >= ANSWER_MIN_REGULAR &&
+                 r.windowRegular >= r.referenceRegular + ANSWER_MARGIN;
+    if (sTraceSearch)
     {
-        Serial.printf("Feedback: %d edges in the window, %d in the reference -> %s\n",
-                      r.window, r.reference, r.answered ? "answer" : "no answer");
+        Serial.printf("Feedback: window %d edges (%u regular), reference %d edges (%u regular) -> %s\n",
+                      r.window, r.windowRegular, r.reference, r.referenceRegular,
+                      r.answered ? "answer" : "no answer");
         Serial.printf("  diag: %s | interrupts window %lu, reference %lu | "
                       "interrupts during the request %lu | timer steps %lu\n",
                       r.measured ? "measured" : "NO RESULT (timeout)",
@@ -335,13 +367,10 @@ bool Feedback::readOnce(const uint8_t *frame, uint8_t bytes, uint8_t *out)
     }
     const uint16_t n = sEdgeCount;
     const MfxDemod::Status st = sDemod.decode(sEdges, n, (float)getCpuFrequencyMhz(), bytes, out);
-    if (sTrace)
-    {
-        Serial.printf("Feedback: read CV, %u edges, carrier %.2f us, %u runs -> %s\n", n,
-                      sDemod.periodUs(), sDemod.runs(), MfxDemod::statusText(st));
-        if (st != MfxDemod::OK && st != MfxDemod::NO_CARRIER)
-            Serial.printf("  bits: %s\n", sDemod.bits());
-    }
+    // A missing decoder gives no carrier: nothing to tell
+    if (sTrace && st != MfxDemod::OK && st != MfxDemod::NO_CARRIER)
+        Serial.printf("Feedback: read CV, %u edges, carrier %.2f us, %u runs -> %s\n  bits: %s\n", n,
+                      sDemod.periodUs(), sDemod.runs(), MfxDemod::statusText(st), sDemod.bits());
     return st == MfxDemod::OK;
 }
 
@@ -360,23 +389,34 @@ bool Feedback::readCV(uint16_t sid, uint16_t cv, uint8_t index, uint8_t bytes, u
     if (!f.toBuffer(frame, sizeof(frame)))
         return false;
 
+    /*
+     Krauss 4.9: answering heats the decoder (it draws about 140 mA during
+     the whole answer). The first ESU decoders needed about 120 ms between
+     two reads; newer Marklin decoders do not, but the pause is kept for
+     every decoder, as a precaution.
+    */
+    static TickType_t lastRead = 0;
     bool ok = false;
     xSemaphoreTake(sMutex, portMAX_DELAY);
     for (uint8_t i = 0; i < 2 && !ok; i++)
     {
-        if (i > 0)
-            vTaskDelay(pdMS_TO_TICKS(50)); // Krauss 4.9: let the decoder cool down
+        const TickType_t since = xTaskGetTickCount() - lastRead;
+        if (lastRead != 0 && since < pdMS_TO_TICKS(READ_PAUSE_MS))
+            vTaskDelay(pdMS_TO_TICKS(READ_PAUSE_MS) - since);
         ok = readOnce(frame, bytes, out);
+        lastRead = xTaskGetTickCount();
     }
     xSemaphoreGive(sMutex);
 
     if (sTrace)
     {
-        Serial.printf("Feedback: CV %03X/%02X of address %u, %u byte(s): ", cv, index, sid, bytes);
+        Serial.printf("  CV %03X/%02X @%u:", cv, index, sid);
         if (ok)
             for (uint8_t i = 0; i < bytes; i++)
-                Serial.printf("%02X ", out[i]);
-        Serial.println(ok ? "" : "no answer");
+                Serial.printf(" %02X", out[i]);
+        else
+            Serial.print(" no answer");
+        Serial.println();
     }
     return ok;
 }

@@ -54,6 +54,12 @@ public:
     // Sent to the broadcast address.
     void bind(uint16_t sid, uint32_t uid);
 
+    // 111 100 + 32-bit UID : existence query (ping, mfx verify, Krauss
+    // 3.2.5), sent to the rail address of the decoder. It answers with a
+    // 1-bit feedback if it has this UID. Beware: a wrong UID makes the
+    // decoder switch off its outputs and register again.
+    void verify(uint32_t uid);
+
     // 111 010 + 6-bit count + 32-bit UID : decoder search (Krauss 3.2.3).
     // Sent to the broadcast address. The decoders not yet registered whose
     // UID starts with the first `count` bits of `uid` answer with a 1-bit

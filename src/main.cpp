@@ -127,6 +127,19 @@ WiFiClient client;
  reconnect without restarting the command station.
  Returns true when a complete frame was read.
 */
+/*
+ Sends whole frames to Rocrail (answers of the command station). The client
+ is shared with readRocrailFrame(): a mutex keeps the writes in one piece.
+*/
+bool sendToRocrail(const uint8_t *buf, size_t len)
+{
+  static SemaphoreHandle_t m = xSemaphoreCreateMutex();
+  xSemaphoreTake(m, portMAX_DELAY);
+  const bool ok = client && client.connected() && client.write(buf, len) == len;
+  xSemaphoreGive(m);
+  return ok;
+}
+
 bool readRocrailFrame(uint8_t *buf, size_t len)
 {
   if (!client || !client.connected())
@@ -192,6 +205,7 @@ void setup()
   loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xE9, 0xB1, 0x94);
   loco[3] = Loco::createLoco(4, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
   loco[4] = Loco::createLoco(8, "150 Y 17 3R", 0x73, 0xFA, 0x74, 0x01);
+  //loco[5] = Loco::createLoco(5, "150 X 5", 0xFF, 0xFE, 0xBF, 0x74);
 
   // Centrale first: Message::centrale() broadcasts its UID and counter
   Centrale::setup(idCentrale, EN_pin);
@@ -205,8 +219,11 @@ void setup()
   Message::setTrace(true);
   // Feedback sensor, before the signal task that uses it
   Feedback::setup(FEEDBACK_PIN);
-  // Print the edge counts of each feedback request (set to false once it works)
-  Feedback::setTrace(true);
+  // Serial trace of the feedback: setTrace(cv, search)
+  //   cv = true: one line per CV read; search = true: the edge counts of
+  //   each 1-bit request of the automatic discovery (two lines every 2 s).
+  // The configuration read in the decoders is printed in any case.
+  Feedback::setTrace(false, true);
 
   // Initialize RMTChannel
   RMTChannel::setup(IN1_pin, IN2_pin);

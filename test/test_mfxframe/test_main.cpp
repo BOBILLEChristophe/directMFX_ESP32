@@ -281,6 +281,19 @@ void test_read_cv_frames_as_recorded()
     checkReadCV(0x02F, 0x01, 2, "10000000111100000001011110000010110010111");
 }
 
+// Example of "Die mfx-Rahmenstruktur" (PING): address 1, UID FFFEB2F9
+void test_verify_frame()
+{
+    MfxFrame f;
+    f.address(1);
+    f.verify(0xFFFEB2F9UL);
+    f.finish();
+    const char *expected = "100000001" "111100" "11111111111111101011001011111001" "00001100";
+    TEST_ASSERT_EQUAL_UINT8(strlen(expected), f.size());
+    for (uint8_t i = 0; i < f.size(); i++)
+        TEST_ASSERT_EQUAL_MESSAGE(expected[i] == '1', f.bitAt(i), "bit of the verify frame");
+}
+
 void test_count_codes()
 {
     TEST_ASSERT_EQUAL_UINT8(0, MfxFrame::countCode(1));
@@ -317,6 +330,7 @@ int main()
     RUN_TEST(test_address_formats);
     RUN_TEST(test_search_frame);
     RUN_TEST(test_read_cv_frames_as_recorded);
+    RUN_TEST(test_verify_frame);
     RUN_TEST(test_count_codes);
     RUN_TEST(test_buffer_too_small_and_overflow);
     return UNITY_END();
