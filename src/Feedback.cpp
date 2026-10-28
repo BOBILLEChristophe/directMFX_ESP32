@@ -230,8 +230,16 @@ void Feedback::setScope(gpio_num_t pin, ScopeMode mode)
     sScopePin = mode == SCOPE_OFF ? GPIO_NUM_NC : pin;
     if (sScopePin == GPIO_NUM_NC)
         return;
-    gpio_reset_pin(pin);
-    gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+    // Low before it becomes an output, and no pull-up: gpio_reset_pin()
+    // would enable the pull-up and give a short false trigger at boot
+    gpio_set_level(pin, 0);
+    gpio_config_t io = {};
+    io.pin_bit_mask = 1ULL << pin;
+    io.mode = GPIO_MODE_OUTPUT;
+    io.pull_up_en = GPIO_PULLUP_DISABLE;
+    io.pull_down_en = GPIO_PULLDOWN_DISABLE;
+    io.intr_type = GPIO_INTR_DISABLE;
+    gpio_config(&io);
     gpio_set_level(pin, 0);
     Serial.printf("Feedback: oscilloscope trigger on GPIO %d (%s)\n", (int)pin,
                   mode == ONE_BIT ? "1-bit feedback" : mode == DATA ? "reading of CVs" : "both");
