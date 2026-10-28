@@ -1,0 +1,403 @@
+/*
+
+   Feedback.cpp
+
+   PCNT (pulse counter) and esp_timer, ESP-IDF 4.4 API (Arduino core 2.0.x).
+   With the move to the core 3.x, the PCNT will go to driver/pulse_cnt.h.
+
+   Data feedback: the rising edges are timed with the cycle counter of the
+   CPU, in the interrupt (always on the core that called setup()).
+
+*/
+
+#include "Feedback.h"
+#include "MfxRMT.h" // BUFFER_SIZE
+#include "MfxSignal.h"
+#include "MfxDemod.h"
+#include "MfxFrame.h"
+#include "driver/pcnt.h"
+#include "esp_timer.h"
+#include "driver/gpio.h"
+#include "soc/gpio_periph.h"
+#include "soc/io_mux_reg.h"
+#include "soc/gpio_sig_map.h"
+#include "soc/gpio_reg.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+
+#include "esp_idf_version.h"
+#if ESP_IDF_VERSION_MAJOR >= 5
+#include "esp_cpu.h"
+#define CYCLES() esp_cpu_get_cycle_count()
+#else
+#include "hal/cpu_hal.h"
+#define CYCLES() cpu_hal_get_cycle_count()
+#endif
+
+bool Feedback::sReady = false;
+static gpio_num_t sPin = GPIO_NUM_NC;
+bool Feedback::sTrace = false;
+
+static const pcnt_unit_t UNIT = PCNT_UNIT_0;
+
+// A request for the signal task: a frame, and the kind of feedback
+struct Request
+{
+    uint8_t dataBytes; // 0: 1-bit feedback, else bytes of a data feedback
+    uint8_t frame[BUFFER_SIZE];
+};
+static QueueHandle_t sRequest = NULL; // one request waiting for the signal task
+static QueueHandle_t sResult = NULL;  // Feedback::Result
+static SemaphoreHandle_t sMutex = NULL;
+
+// Steps of the measurement, one esp_timer each
+enum Step : uint8_t
+{
+    CLEAR_WINDOW,
+    READ_WINDOW,
+    CLEAR_REFERENCE,
+    READ_REFERENCE,
+    DATA_START, // data feedback: start and end of the capture of the edges
+    DATA_END,
+    STEPS
+};
+static esp_timer_handle_t sTimers[STEPS];
+static volatile int16_t sWindowEdges = 0;
+
+// Diagnostic: the edges are also counted by interrupt
+static volatile uint32_t sIrqEdges = 0;
+static volatile uint32_t sIrqStart = 0;
+static volatile uint32_t sIrqWindow = 0;
+static volatile uint32_t sTimerSteps = 0; // steps run since boot
+// Data feedback: times of the rising edges during the pause
+static const uint16_t EDGES_MAX = 6000; // 8 bytes: 93 ms x 52.6 edges/ms, and spare
+static uint32_t *sEdges = NULL;
+static volatile uint16_t sEdgeCount = 0;
+static volatile bool sCapture = false;
+static SemaphoreHandle_t sDataDone = NULL; // given at the end of the pause
+static MfxDemod sDemod;                    // used under sMutex
+
+static void IRAM_ATTR onEdge()
+{
+    sIrqEdges = sIrqEdges + 1;
+    if (sCapture)
+    {
+        const uint16_t n = sEdgeCount;
+        if (n < EDGES_MAX)
+        {
+            sEdges[n] = CYCLES();
+            sEdgeCount = n + 1;
+        }
+    }
+}
+
+void Feedback::setup(gpio_num_t pin)
+{
+    sPin = pin;
+    pcnt_config_t cfg = {};
+    cfg.pulse_gpio_num = pin;
+    cfg.ctrl_gpio_num = PCNT_PIN_NOT_USED;
+    cfg.channel = PCNT_CHANNEL_0;
+    cfg.unit = UNIT;
+    cfg.pos_mode = PCNT_COUNT_INC; // rising edge: +1
+    cfg.neg_mode = PCNT_COUNT_DIS; // falling edge: nothing
+    cfg.lctrl_mode = PCNT_MODE_KEEP;
+    cfg.hctrl_mode = PCNT_MODE_KEEP;
+    cfg.counter_h_lim = 32767;
+    cfg.counter_l_lim = -32768;
+    if (pcnt_unit_config(&cfg) != ESP_OK)
+    {
+        Serial.println("Feedback: PCNT error, feedback disabled");
+        return;
+    }
+    // Ignores pulses shorter than 1 µs (80 APB cycles at 80 MHz)
+    pcnt_set_filter_value(UNIT, 80);
+    pcnt_filter_enable(UNIT);
+    pcnt_counter_pause(UNIT);
+    pcnt_counter_clear(UNIT);
+    pcnt_counter_resume(UNIT);
+
+    for (uint8_t i = 0; i < STEPS; i++)
+    {
+        esp_timer_create_args_t args = {};
+        args.callback = onTimer;
+        args.arg = (void *)(uintptr_t)i;
+        args.dispatch_method = ESP_TIMER_TASK;
+        args.name = "feedback";
+        if (esp_timer_create(&args, &sTimers[i]) != ESP_OK)
+        {
+            Serial.println("Feedback: timer error, feedback disabled");
+            return;
+        }
+    }
+
+    pinMode(pin, INPUT);
+    attachInterrupt(digitalPinToInterrupt(pin), onEdge, RISING);
+
+    sRequest = xQueueCreate(1, sizeof(Request));
+    sResult = xQueueCreate(1, sizeof(Result));
+    sMutex = xSemaphoreCreateMutex();
+    sDataDone = xSemaphoreCreateBinary();
+    sEdges = (uint32_t *)malloc(EDGES_MAX * sizeof(uint32_t));
+    if (sEdges == NULL)
+        Serial.println("Feedback: out of memory, reading of CVs disabled");
+    if (sRequest == NULL || sResult == NULL || sMutex == NULL || sDataDone == NULL)
+    {
+        Serial.println("Feedback: out of memory, feedback disabled");
+        return;
+    }
+    sReady = true;
+    Serial.printf("Feedback: comparator on GPIO %d\n", (int)pin);
+}
+
+/*
+ Runs in the esp_timer task. The windows last 6.4 ms: a delay of a few tens
+ of µs of this task does not matter, the first 200 µs are not counted anyway.
+*/
+void Feedback::onTimer(void *arg)
+{
+    const uint8_t step = (uint8_t)(uintptr_t)arg;
+    int16_t edges = 0;
+    sTimerSteps = sTimerSteps + 1;
+    switch (step)
+    {
+    case CLEAR_WINDOW:
+    case CLEAR_REFERENCE:
+        pcnt_counter_clear(UNIT);
+        sIrqStart = sIrqEdges;
+        break;
+    case READ_WINDOW:
+        pcnt_get_counter_value(UNIT, &edges);
+        sWindowEdges = edges;
+        sIrqWindow = sIrqEdges - sIrqStart;
+        break;
+    case DATA_START:
+        sEdgeCount = 0;
+        sCapture = sEdges != NULL;
+        break;
+    case DATA_END:
+        sCapture = false;
+        xSemaphoreGive(sDataDone);
+        break;
+    case READ_REFERENCE:
+    {
+        pcnt_get_counter_value(UNIT, &edges);
+        Result r = {};
+        r.window = sWindowEdges;
+        r.reference = edges;
+        r.answered = false; // decided in ask()
+        r.windowIrq = sIrqWindow;
+        r.referenceIrq = sIrqEdges - sIrqStart;
+        r.measured = true;
+        xQueueOverwrite(sResult, &r);
+        break;
+    }
+    }
+}
+
+void Feedback::windowsStarted(int64_t startUs, uint32_t windowUs, uint32_t referenceUs)
+{
+    if (!sReady)
+        return;
+    const uint32_t length = MfxSignal::FEEDBACK_WINDOW_US;
+    const int64_t at[READ_REFERENCE + 1] = {
+        startUs + windowUs + SKIP_START_US,
+        startUs + windowUs + length - SKIP_END_US,
+        startUs + referenceUs + SKIP_START_US,
+        startUs + referenceUs + length - SKIP_END_US,
+    };
+    const int64_t now = esp_timer_get_time();
+    for (uint8_t i = 0; i <= READ_REFERENCE; i++)
+    {
+        esp_timer_stop(sTimers[i]); // in case a previous measurement is still pending
+        const int64_t delay = at[i] - now;
+        esp_timer_start_once(sTimers[i], delay > 0 ? (uint64_t)delay : 0);
+    }
+}
+
+/*
+ The capture starts at the start of the pause (the decoder starts its
+ carrier there) and ends 300 µs before its end: the final synchronisation
+ and the next chunk would give false edges.
+*/
+void Feedback::dataStarted(int64_t startUs, uint32_t pauseUs, uint8_t bytes)
+{
+    if (!sReady)
+        return;
+    const int64_t at[2] = {
+        startUs + pauseUs,
+        startUs + pauseUs + MfxSignal::dataPauseUs(bytes) - 300,
+    };
+    const int64_t now = esp_timer_get_time();
+    for (uint8_t i = 0; i < 2; i++)
+    {
+        esp_timer_handle_t t = sTimers[DATA_START + i];
+        esp_timer_stop(t);
+        const int64_t delay = at[i] - now;
+        esp_timer_start_once(t, delay > 0 ? (uint64_t)delay : 0);
+    }
+}
+
+bool Feedback::takeRequest(uint8_t *frame, size_t size, uint8_t *dataBytes)
+{
+    if (!sReady || size < BUFFER_SIZE)
+        return false;
+    Request r;
+    if (xQueueReceive(sRequest, &r, 0) != pdPASS)
+        return false;
+    memcpy(frame, r.frame, BUFFER_SIZE);
+    if (dataBytes)
+        *dataBytes = r.dataBytes;
+    return true;
+}
+
+void Feedback::cancel()
+{
+    if (!sReady)
+        return;
+    Result r = {};
+    xQueueOverwrite(sResult, &r);
+    sCapture = false;
+    sEdgeCount = 0;
+    xSemaphoreGive(sDataDone);
+}
+
+bool Feedback::ask(const MfxFrame &frame, Result *result)
+{
+    Result r = {};
+    if (!sReady)
+    {
+        if (result)
+            *result = r;
+        return false;
+    }
+
+    Request req;
+    req.dataBytes = 0;
+    if (!frame.toBuffer(req.frame, sizeof(req.frame)))
+    {
+        if (result)
+            *result = r;
+        return false;
+    }
+
+    xSemaphoreTake(sMutex, portMAX_DELAY);
+    const uint32_t irqBefore = sIrqEdges;
+    const uint32_t stepsBefore = sTimerSteps;
+    xQueueReset(sResult);
+    xQueueSend(sRequest, &req, 0);
+    // The chunk lasts about 30 ms, plus the end of the chunk being sent
+    const bool done = xQueueReceive(sResult, &r, pdMS_TO_TICKS(200)) == pdPASS;
+    if (!done)
+        xQueueReset(sRequest); // never sent
+    xSemaphoreGive(sMutex);
+
+    r.answered = done && r.window >= ANSWER_MIN_EDGES && r.window > 4 * r.reference;
+    if (sTrace)
+    {
+        Serial.printf("Feedback: %d edges in the window, %d in the reference -> %s\n",
+                      r.window, r.reference, r.answered ? "answer" : "no answer");
+        Serial.printf("  diag: %s | interrupts window %lu, reference %lu | "
+                      "interrupts during the request %lu | timer steps %lu\n",
+                      r.measured ? "measured" : "NO RESULT (timeout)",
+                      (unsigned long)r.windowIrq, (unsigned long)r.referenceIrq,
+                      (unsigned long)(sIrqEdges - irqBefore),
+                      (unsigned long)(sTimerSteps - stepsBefore));
+    }
+    if (result)
+        *result = r;
+    return r.answered;
+}
+
+/*
+ One data request: sends it, waits for the end of the pause, decodes.
+ Called under sMutex.
+*/
+bool Feedback::readOnce(const uint8_t *frame, uint8_t bytes, uint8_t *out)
+{
+    Request req;
+    req.dataBytes = bytes;
+    memcpy(req.frame, frame, BUFFER_SIZE);
+    xSemaphoreTake(sDataDone, 0); // forget an old end of pause
+    sEdgeCount = 0;
+    xQueueSend(sRequest, &req, 0);
+    // The chunk: frame and synchronisations (~10 ms), the pause (up to
+    // 93 ms), plus the end of the chunk being sent
+    const uint32_t waitMs = 50 + MfxSignal::dataPauseUs(bytes) / 1000 + 100;
+    if (xSemaphoreTake(sDataDone, pdMS_TO_TICKS(waitMs)) != pdPASS)
+    {
+        xQueueReset(sRequest); // never sent
+        sCapture = false;
+        if (sTrace)
+            Serial.println("Feedback: read CV, no end of pause (timeout)");
+        return false;
+    }
+    const uint16_t n = sEdgeCount;
+    const MfxDemod::Status st = sDemod.decode(sEdges, n, (float)getCpuFrequencyMhz(), bytes, out);
+    if (sTrace)
+    {
+        Serial.printf("Feedback: read CV, %u edges, carrier %.2f us, %u runs -> %s\n", n,
+                      sDemod.periodUs(), sDemod.runs(), MfxDemod::statusText(st));
+        if (st != MfxDemod::OK && st != MfxDemod::NO_CARRIER)
+            Serial.printf("  bits: %s\n", sDemod.bits());
+    }
+    return st == MfxDemod::OK;
+}
+
+bool Feedback::readCV(uint16_t sid, uint16_t cv, uint8_t index, uint8_t bytes, uint8_t *out)
+{
+    if (!sReady || sEdges == NULL || out == NULL)
+        return false;
+    if (bytes != 1 && bytes != 2 && bytes != 4 && bytes != 8)
+        return false;
+
+    MfxFrame f;
+    f.address(sid);
+    f.readCV(cv, index, bytes);
+    f.finish();
+    uint8_t frame[BUFFER_SIZE];
+    if (!f.toBuffer(frame, sizeof(frame)))
+        return false;
+
+    bool ok = false;
+    xSemaphoreTake(sMutex, portMAX_DELAY);
+    for (uint8_t i = 0; i < 2 && !ok; i++)
+    {
+        if (i > 0)
+            vTaskDelay(pdMS_TO_TICKS(50)); // Krauss 4.9: let the decoder cool down
+        ok = readOnce(frame, bytes, out);
+    }
+    xSemaphoreGive(sMutex);
+
+    if (sTrace)
+    {
+        Serial.printf("Feedback: CV %03X/%02X of address %u, %u byte(s): ", cv, index, sid, bytes);
+        if (ok)
+            for (uint8_t i = 0; i < bytes; i++)
+                Serial.printf("%02X ", out[i]);
+        Serial.println(ok ? "" : "no answer");
+    }
+    return ok;
+}
+
+void Feedback::printPinState()
+{
+    static uint32_t lastIrq = 0;
+    if (sPin == GPIO_NUM_NC)
+        return;
+    const uint32_t irq = sIrqEdges;
+    int16_t pcnt = 0;
+    pcnt_get_counter_value(UNIT, &pcnt);
+    // FUN_IE: input buffer of the pad enabled; MCU_SEL: function of the pad (2 = GPIO)
+    const uint32_t mux = REG_READ(GPIO_PIN_MUX_REG[sPin]);
+    // GPIO matrix: which pin feeds the PCNT unit 0 pulse input (0x38 = constant low)
+    const uint32_t pcntIn = REG_READ(GPIO_FUNC0_IN_SEL_CFG_REG + 4 * PCNT_SIG_CH0_IN0_IDX);
+    Serial.printf("Retour GPIO %d : niveau %d | fronts (interruption) %lu en 1 s | PCNT %d | "
+                  "IO_MUX 0x%08lX (entree %s, fonction %lu) | entree PCNT <- GPIO %lu\n",
+                  (int)sPin, gpio_get_level(sPin), (unsigned long)(irq - lastIrq), pcnt,
+                  (unsigned long)mux, (mux & FUN_IE) ? "activee" : "DESACTIVEE",
+                  (unsigned long)((mux >> MCU_SEL_S) & MCU_SEL_V),
+                  (unsigned long)(pcntIn & 0x3F));
+    lastIrq = irq;
+}

@@ -38,10 +38,15 @@ private:
     static bool traceCommands; // Commands received from Rocrail
     static byte buff[BUFF_MSG_SIZE];
     static Loco **loco;
-    static byte locoSize;
+    static volatile byte locoSize; // locomotives in loco[]
+    static byte locoCapacity;      // size of loco[]
 
 public:
-    static void setup(Loco *locoArray[], byte locoCount);
+    // locoArray: room for capacity locomotives, the first count are filled
+    static void setup(Loco *locoArray[], byte capacity, byte count);
+    // Adds a locomotive to the refresh (drive frames and Bind).
+    // Returns false if the array is full.
+    static bool addLoco(Loco *l);
     // Prints each command received from Rocrail (speed, direction, functions)
     static void setTrace(bool on) { traceCommands = on; }
     static void decodeMsg(byte *);

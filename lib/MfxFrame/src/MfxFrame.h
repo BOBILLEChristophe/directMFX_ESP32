@@ -54,6 +54,22 @@ public:
     // Sent to the broadcast address.
     void bind(uint16_t sid, uint32_t uid);
 
+    // 111 010 + 6-bit count + 32-bit UID : decoder search (Krauss 3.2.3).
+    // Sent to the broadcast address. The decoders not yet registered whose
+    // UID starts with the first `count` bits of `uid` answer with a 1-bit
+    // feedback. count = 0: every decoder not yet registered answers.
+    void search(uint8_t count, uint32_t uid);
+
+    // 111 000 + CV number (10 bits) + index (6 bits) + CC (2 bits) : read
+    // configuration variables (Krauss 3.2.1), answered by a data feedback.
+    // bytes = 1, 2, 4 or 8 (CC = 00, 01, 10, 11): the CVs cv/index,
+    // cv/index+1, ... are sent back. Any other value reads 1 byte.
+    void readCV(uint16_t cv, uint8_t index, uint8_t bytes);
+
+    // Value of CC for a number of bytes (1, 2, 4, 8), and the reverse
+    static uint8_t countCode(uint8_t bytes);
+    static uint8_t countBytes(uint8_t code) { return (uint8_t)(1 << (code & 3)); }
+
     // 111 101 + 32-bit UID + 16-bit counter : command station broadcast.
     // Sent to the broadcast address.
     void centrale(uint32_t uid, uint16_t counter);

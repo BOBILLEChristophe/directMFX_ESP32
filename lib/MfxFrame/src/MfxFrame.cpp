@@ -79,6 +79,36 @@ void MfxFrame::bind(uint16_t sid, uint32_t uid)
     put(uid, 32);
 }
 
+uint8_t MfxFrame::countCode(uint8_t bytes)
+{
+    switch (bytes)
+    {
+    case 2:
+        return 1;
+    case 4:
+        return 2;
+    case 8:
+        return 3;
+    default:
+        return 0;
+    }
+}
+
+void MfxFrame::readCV(uint16_t cv, uint8_t index, uint8_t bytes)
+{
+    put(0b111000, 6);
+    put(cv & 0x3FF, 10);
+    put(index & 0x3F, 6);
+    put(countCode(bytes), 2);
+}
+
+void MfxFrame::search(uint8_t count, uint32_t uid)
+{
+    put(0b111010, 6);
+    put(count & 0x3F, 6);
+    put(uid, 32);
+}
+
 void MfxFrame::centrale(uint32_t uid, uint16_t counter)
 {
     put(0b111101, 6);

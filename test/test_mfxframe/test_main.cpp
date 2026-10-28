@@ -235,6 +235,62 @@ void test_address_formats()
         TEST_ASSERT_TRUE(f.bitAt(i));
 }
 
+// Decoder search (Krauss 3.2.3), as in the search log of the ATC page:
+// 111010 CCCCCC UUUU...U after the broadcast address
+void test_search_frame()
+{
+    MfxFrame f;
+    f.broadcast();
+    f.search(3, 0xDFFFFFFFUL);
+    TEST_ASSERT_EQUAL_UINT8(9 + 6 + 6 + 32, f.size());
+
+    const char *expected = "100000000"   // address 0, 7-bit format
+                           "111010"      // search
+                           "000011"      // count = 3
+                           "11011111111111111111111111111111";
+    for (uint8_t i = 0; i < f.size(); i++)
+        TEST_ASSERT_EQUAL_MESSAGE(expected[i] == '1', f.bitAt(i), "bit of the search frame");
+
+    // count is kept on 6 bits
+    MfxFrame g;
+    g.search(32, 0);
+    TEST_ASSERT_EQUAL(true, g.bitAt(6));   // 32 = 100000
+    TEST_ASSERT_EQUAL(false, g.bitAt(11));
+}
+
+/*
+ Frames recorded on the track of a Marklin Gleisbox (MS2) reading the CVs
+ of a decoder with the rail address 1. They include the CRC.
+*/
+static void checkReadCV(uint16_t cv, uint8_t index, uint8_t bytes, const char *recorded)
+{
+    MfxFrame f;
+    f.address(1);
+    f.readCV(cv, index, bytes);
+    f.finish();
+    TEST_ASSERT_EQUAL_UINT8(strlen(recorded), f.size());
+    for (uint8_t i = 0; i < f.size(); i++)
+        TEST_ASSERT_EQUAL_MESSAGE(recorded[i] == '1', f.bitAt(i), "bit of the read CV frame");
+}
+
+void test_read_cv_frames_as_recorded()
+{
+    checkReadCV(0x000, 0x00, 2, "10000000111100000000000000000000111100110");
+    checkReadCV(0x080, 0x00, 2, "10000000111100000100000000000000101010000");
+    checkReadCV(0x003, 0x01, 4, "10000000111100000000000110000011011001100");
+    checkReadCV(0x02F, 0x01, 2, "10000000111100000001011110000010110010111");
+}
+
+void test_count_codes()
+{
+    TEST_ASSERT_EQUAL_UINT8(0, MfxFrame::countCode(1));
+    TEST_ASSERT_EQUAL_UINT8(1, MfxFrame::countCode(2));
+    TEST_ASSERT_EQUAL_UINT8(2, MfxFrame::countCode(4));
+    TEST_ASSERT_EQUAL_UINT8(3, MfxFrame::countCode(8));
+    TEST_ASSERT_EQUAL_UINT8(0, MfxFrame::countCode(3));
+    TEST_ASSERT_EQUAL_UINT8(8, MfxFrame::countBytes(3));
+}
+
 void test_buffer_too_small_and_overflow()
 {
     MfxFrame f;
@@ -259,6 +315,9 @@ int main()
     RUN_TEST(test_centrale_frame_identical);
     RUN_TEST(test_bind_frame_identical);
     RUN_TEST(test_address_formats);
+    RUN_TEST(test_search_frame);
+    RUN_TEST(test_read_cv_frames_as_recorded);
+    RUN_TEST(test_count_codes);
     RUN_TEST(test_buffer_too_small_and_overflow);
     return UNITY_END();
 }

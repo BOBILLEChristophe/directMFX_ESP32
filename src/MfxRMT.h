@@ -5,6 +5,8 @@
    Track signal generator: one task owns the RMT channel and keeps it busy.
    Frames come from mfxQueue; when there is none, synchronisation patterns
    fill the line, so the signal never stops.
+   A frame that asks for a feedback (Feedback::ask()) goes first; it is
+   followed by the feedback request and its two windows.
 
 */
 
@@ -25,7 +27,7 @@ public:
 
 private:
     static void signalTask(void *parameter);
-    static void send(const MfxSignal &signal);
+    static int64_t send(const MfxSignal &signal); // returns the start time (µs)
 
     // Two buffers: one is being sent while the next chunk is built in the other
     static rmt_item32_t sItems[2][MfxSignal::MAX_ITEMS];

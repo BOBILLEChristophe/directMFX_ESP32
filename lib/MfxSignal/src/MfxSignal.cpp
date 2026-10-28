@@ -4,7 +4,7 @@
 
 #include "MfxSignal.h"
 
-void MfxSignal::push(bool level0, bool level1)
+void MfxSignal::push(bool level0, bool level1, uint16_t duration0, uint16_t duration1)
 {
     if (mCount >= MAX_ITEMS)
     {
@@ -13,7 +13,76 @@ void MfxSignal::push(bool level0, bool level1)
     }
     mItems[mCount].level0 = level0;
     mItems[mCount].level1 = level1;
+    mItems[mCount].duration0 = duration0;
+    mItems[mCount].duration1 = duration1;
     mCount++;
+}
+
+void MfxSignal::hold(uint32_t us)
+{
+    if (us > 65534)
+        us = 65534;
+    const uint16_t first = (uint16_t)(us / 2);
+    push(mLevel, mLevel, first, (uint16_t)(us - first));
+}
+
+uint32_t MfxSignal::durationUs() const
+{
+    uint32_t us = 0;
+    for (uint16_t i = 0; i < mCount; i++)
+        us += (uint32_t)mItems[i].duration0 + mItems[i].duration1;
+    return us;
+}
+
+void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs)
+{
+    for (uint8_t i = 0; i < FEEDBACK_SYNCS; i++)
+        sync();
+    bit0();
+    bit0();
+    bit1();
+    bit1();
+
+    if (windowUs)
+        *windowUs = durationUs();
+    hold(FEEDBACK_WINDOW_US);
+
+    sync();
+
+    if (referenceUs)
+        *referenceUs = durationUs();
+    hold(FEEDBACK_WINDOW_US);
+
+    for (uint8_t i = 0; i < FEEDBACK_END_SYNCS; i++)
+        sync();
+}
+
+void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs)
+{
+    if (bytes > DATA_MAX_BYTES)
+        bytes = DATA_MAX_BYTES;
+    for (uint8_t i = 0; i < FEEDBACK_SYNCS; i++)
+        sync();
+    bit0();
+    bit0();
+    bit1();
+    bit1();
+
+    if (pauseUs)
+        *pauseUs = durationUs();
+    // One item per period: the pause level, then the pulse. The next item
+    // starts again at the pause level (end of the pulse).
+    const bool l = mLevel;
+    for (uint8_t i = 0; i < DATA_LEAD_CLOCKS; i++)
+        push(l, !l, DATA_CLOCK_US - DATA_PULSE_US, DATA_PULSE_US);
+    const uint16_t half = DATA_CLOCK_US / 2;
+    const uint16_t pulses = 2 * dataClocks(bytes);
+    for (uint16_t i = 0; i < pulses; i++)
+        push(l, !l, half - DATA_PULSE_US, DATA_PULSE_US);
+    push(l, l, HALF_US / 2, HALF_US / 2); // back to the pause level
+    mLevel = l;
+
+    sync();
 }
 
 void MfxSignal::bit0()

@@ -18,7 +18,7 @@ Ce projet fait l'objet d'un fil sur le forum 3R : https://forum.3rails.fr/t/cont
 
 ### Ce qui reste à faire
 
-- Retour d'information des décodeurs vers la centrale (découverte automatique des locos, lecture des CV).
+- Lecture des CV (retour de données des décodeurs). Le retour 1 bit et la découverte automatique des locos sont en cours d'essai, voir plus bas.
 - Fonctions F16 et au-delà, arrêt d'urgence, réponses à Rocrail (état, surcharge).
 - Passage au nouveau pilote RMT d'ESP-IDF 5.
 
@@ -33,6 +33,24 @@ La Box de Locoduino convient parfaitement et apporte une base matérielle compl�
 <img src="include/_DSC1639.jpg" alt="La Box de Locoduino" width="1000">
 
 Voir sur YouTube : https://youtu.be/kIXx-TSOVpQ?si=jwideeNshVRPlX4l
+
+### Retour d'information (en cours d'essai)
+
+Un capteur sur un fil de voie permet aux décodeurs de répondre à la centrale. Il sert d'abord à la **découverte automatique** : toutes les 2 s, la centrale cherche les décodeurs mfx qui ne sont pas encore inscrits, lit leur UID et leur donne une adresse libre. Le moniteur série affiche l'UID et la ligne à ajouter dans `src/main.cpp`.
+
+Le capteur (schéma ci-dessous) :
+
+- **T1** : tore en poudre de fer Micrometals T50-26B. Le fil de voie OUT1 le traverse une fois (un seul des deux fils). Secondaire : 52 spires de fil émaillé soudable 0,20 mm (L ≈ 118 µH).
+- **Circuit accordé** sur environ 53 kHz, la porteuse de la réponse des décodeurs : 68 nF + 6,8 nF (polypropylène) et 150 Ω en parallèle sur le secondaire. Son point bas est à VREF = 1,65 V (pont 10 kΩ / 10 kΩ découplé par 1 µF).
+- **Comparateur** MCP6541 (DIP-8, 3,3 V) avec une hystérésis d'environ ±50 mV (10 kΩ et 330 kΩ). Sa sortie va sur **GPIO 26** (`FEEDBACK_PIN` dans `src/main.cpp`).
+
+Le +3,3 V et la masse sont ceux de l'ESP32 ; le tore isole le capteur de la voie.
+
+[![Capteur de retour](https://github.com/BOBILLEChristophe/MFX-Track-Station/raw/main/include/capteur_retour.png)](/BOBILLEChristophe/MFX-Track-Station/blob/main/include/capteur_retour.png)
+
+Fonctionnement : après une commande qui attend une réponse, la centrale maintient la voie à niveau constant pendant deux fenêtres de 6,4 ms. Le décodeur répond dans la première en consommant un courant à 52,6 kHz ; la seconde sert de référence pour le bruit. Le PCNT de l'ESP32 compte les fronts du comparateur dans chaque fenêtre (`src/Feedback.cpp`).
+
+**Lecture des CV** (`Feedback::readCV()`) : la centrale envoie la commande de lecture (`111 000`, numéro de CV, index, nombre d'octets : 1, 2, 4 ou 8), puis une longue pause rythmée par de courtes impulsions (23 toutes les 912 µs, puis toutes les 456 µs). Le décodeur répond pendant toute la pause en inversant la phase de sa porteuse : une inversion à chaque période de 912 µs, et une de plus au milieu pour un bit à 0. L'ESP32 horodate chaque front du comparateur ; `lib/MfxDemod` retrouve les inversions de phase, les bits, les octets, et vérifie la somme de contrôle. Le format a été relevé sur une Gleisbox Märklin et les tests unitaires décodent ces réponses réelles. Au premier allumage de la voie, la centrale lit le nom de chaque locomotive déclarée (CV 003) et l'affiche sur le moniteur série ; elle le lit aussi pour chaque nouveau décodeur trouvé.
 
 ### Compilation
 

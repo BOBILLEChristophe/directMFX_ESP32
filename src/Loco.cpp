@@ -6,6 +6,23 @@
 */
 
 #include "Loco.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+
+// The map is read by the Rocrail task and filled by the decoder discovery:
+// every access goes through this mutex. Pointers to the locomotives stay
+// valid when the map grows (std::unordered_map keeps its nodes).
+static SemaphoreHandle_t mapMutex()
+{
+  static SemaphoreHandle_t m = xSemaphoreCreateMutex();
+  return m;
+}
+
+struct MapLock
+{
+  MapLock() { xSemaphoreTake(mapMutex(), portMAX_DELAY); }
+  ~MapLock() { xSemaphoreGive(mapMutex()); }
+};
 
 // Constructeur par défaut.
 // Il n'incrémente plus le compteur de réinscription MFX : unordered_map::operator[]
@@ -50,7 +67,22 @@ String Loco::name() const { return m_name; }
 
 void Loco::addLoco(const Loco &loco)
 {
+  MapLock lock;
   locoMap[loco.addr()] = loco;
+}
+
+uint32_t Loco::uid32() const
+{
+  return (uint32_t)m_uid[0] << 24 | (uint32_t)m_uid[1] << 16 | (uint32_t)m_uid[2] << 8 | m_uid[3];
+}
+
+Loco *Loco::findByUid(uint32_t uid)
+{
+  MapLock lock;
+  for (auto &entry : locoMap)
+    if (entry.second.uid32() == uid)
+      return &entry.second;
+  return nullptr;
 }
 
 // Utilisation d'un unordered_map pour stocker les locomotives en fonction de leur adresse
@@ -62,6 +94,7 @@ std::unordered_map<uint8_t, Loco> Loco::locoMap;
 // le compteur de réinscription.
 Loco *Loco::findLoco(uint8_t address)
 {
+  MapLock lock;
   auto it = locoMap.find(address);
   return it == locoMap.end() ? nullptr : &it->second;
 }
@@ -69,6 +102,7 @@ Loco *Loco::findLoco(uint8_t address)
 Loco *Loco::createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3)
 {
   Loco loco(address, name, uid0, uid1, uid2, uid3);
+  MapLock lock;
   auto it = locoMap.find(address);
   if (it != locoMap.end())
   {

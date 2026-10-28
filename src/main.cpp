@@ -24,6 +24,8 @@
 #include "freertos/queue.h"
 #include "Centrale.h"
 #include "CurrentMonitor.h"
+#include "Discovery.h"
+#include "Feedback.h"
 #include "Loco.h"
 #include "Message.h"
 #include "RxTask.h"
@@ -44,13 +46,16 @@ gpio_num_t IN1_pin = GPIO_NUM_27;                  // Pin for IN1 of H-Bridge
 gpio_num_t IN2_pin = GPIO_NUM_33;                  // Pin for IN2 of H-Bridge
 gpio_num_t EN_pin = GPIO_NUM_32;                   // Pin for Enable signal of H-Bridge
 gpio_num_t CURRENT_MONITOR_PIN_MAIN = GPIO_NUM_36; // Pin for current mesure
+gpio_num_t FEEDBACK_PIN = GPIO_NUM_26;             // Output of the feedback comparator (MCP6541)
 
 // Pointer to the MFX message queue
 QueueHandle_t mfxQueue = NULL;
 
-// Locomotives
-const byte nbLocos = 4; // Maximum number of locomotives
-Loco *loco[nbLocos];    // Array of locomotive pointers
+// Locomotives: the declared ones, plus room for the decoders found on the
+// track by the automatic discovery (Discovery.h)
+const byte MAX_LOCOS = 16; // Maximum number of locomotives
+const byte nbLocos = 5;    // Locomotives declared below
+Loco *loco[MAX_LOCOS] = {}; // Array of locomotive pointers
 
 CurrentMonitor mainMonitor(CURRENT_MONITOR_PIN_MAIN); // create monitor for current on Main Track
 
@@ -184,23 +189,33 @@ void setup()
   // Initialize locomotive instances
   loco[0] = Loco::createLoco(1, "5519 CFL", 0x73, 0xF6, 0x88, 0x34);
   loco[1] = Loco::createLoco(2, "241 A 004", 0x73, 0xE9, 0x2A, 0x0F);
-  loco[2] = Loco::createLoco(5, "150 X 5", 0xFF, 0xE9, 0xB1, 0x94);
+  loco[2] = Loco::createLoco(3, "150 X 5", 0xFF, 0xE9, 0xB1, 0x94);
   loco[3] = Loco::createLoco(4, "040 DE 9", 0xF9, 0xE6, 0x10, 0xE0);
+  loco[4] = Loco::createLoco(8, "150 Y 17 3R", 0x73, 0xFA, 0x74, 0x01);
 
   // Centrale first: Message::centrale() broadcasts its UID and counter
   Centrale::setup(idCentrale, EN_pin);
+  //Centrale::setCounter(Centrale::counter() + 1); // PROVISOIRE : force la réinscription
   Serial.printf("MFX re-registration counter : %u\n", Centrale::counter());
 
   // Set up the Message system
-  Message::setup(loco, nbLocos);
+  Message::setup(loco, MAX_LOCOS, nbLocos);
   // Print each command received from Rocrail (speed, direction, functions).
   // Set to false once everything works: printing slows down the reception.
   Message::setTrace(true);
+  // Feedback sensor, before the signal task that uses it
+  Feedback::setup(FEEDBACK_PIN);
+  // Print the edge counts of each feedback request (set to false once it works)
+  Feedback::setTrace(true);
+
   // Initialize RMTChannel
   RMTChannel::setup(IN1_pin, IN2_pin);
 
+  // Automatic discovery of the decoders not yet registered
+  Discovery::setup();
+
   xTaskCreatePinnedToCore(currentMonitorTask, "CurrentMonitorTask", 4 * 1024, &mainMonitor, 9, NULL, 0);
-  xTaskCreatePinnedToCore(currentDisplayTask, "CurrentDisplayTask", 3 * 1024, &mainMonitor, 1, NULL, 0);
+  xTaskCreatePinnedToCore(currentDisplayTask, "CurrentDisplayTask", 4 * 1024, &mainMonitor, 1, NULL, 0);
 
   //--------------------------------------------------------------------------------------
   //  Network

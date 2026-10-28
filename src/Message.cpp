@@ -10,7 +10,8 @@
 #include "MfxFrame.h"
 
 Loco **Message::loco = nullptr;
-byte Message::locoSize = 0;
+volatile byte Message::locoSize = 0;
+byte Message::locoCapacity = 0;
 
 bool Message::trace = false;
 bool Message::traceCommands = false;
@@ -26,10 +27,11 @@ byte Message::buff[BUFF_MSG_SIZE] = {0};
 
 SemaphoreHandle_t taskSemaphore;
 
-void Message::setup(Loco *locoArray[], byte locoCount)
+void Message::setup(Loco *locoArray[], byte capacity, byte count)
 {
     loco = locoArray;
-    locoSize = locoCount;
+    locoCapacity = capacity;
+    locoSize = count < capacity ? count : capacity;
     trace = false;
 
     taskSemaphore = xSemaphoreCreateBinary();
@@ -38,6 +40,27 @@ void Message::setup(Loco *locoArray[], byte locoCount)
     xTaskCreatePinnedToCore(periodic, "Periodic", 2 * 1024, (void *)loco, 6, NULL, 0);
     xTaskCreatePinnedToCore(centrale, "Centrale", 2 * 1024, (void *)loco, 5, NULL, 0);
     xTaskCreatePinnedToCore(setSID, "SetSID", 2 * 1024, (void *)loco, 5, NULL, 0);
+}
+
+/*
+ Called by the decoder discovery (Discovery.cpp). The periodic tasks read
+ loco[] while they hold taskSemaphore: the new entry is written before the
+ count, under the same semaphore.
+*/
+bool Message::addLoco(Loco *l)
+{
+    bool added = false;
+    if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        if (locoSize < locoCapacity)
+        {
+            loco[locoSize] = l;
+            locoSize = locoSize + 1;
+            added = true;
+        }
+        xSemaphoreGive(taskSemaphore);
+    }
+    return added;
 }
 
 /*

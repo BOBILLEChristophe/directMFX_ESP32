@@ -37,6 +37,12 @@ public:
   // Renvoie nullptr si aucune loco n'a cette adresse.
   static Loco *findLoco(uint8_t);
 
+  // UID du décodeur sur 32 bits (UID(0) = octet de poids fort)
+  uint32_t uid32() const;
+
+  // Renvoie nullptr si aucune loco n'a ce décodeur.
+  static Loco *findByUid(uint32_t uid);
+
   // Crée la loco, ou remplace celle qui a déjà cette adresse.
   static Loco *createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3);
 };

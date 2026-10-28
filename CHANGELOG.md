@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Added (feedback, under test)
+- **1-bit feedback** (`src/Feedback.cpp`): `Feedback::ask()` sends a frame followed by the feedback request (11 synchronisations, bits 0011) and two windows of 6.4 ms at constant level. The PCNT counts the rising edges of the sensor comparator in the answer window and in a reference window, from 200 µs after the start of each window (the tuned circuit still rings 60 to 80 µs after the last polarity change). A decoder answered when the answer window holds at least 100 edges and 4 times more than the reference window. Sensor: see the README; comparator output on GPIO 26.
+- **Automatic discovery** (`src/Discovery.cpp`): every 2 s while the track is powered, a decoder search with count 0; if a decoder answers, its UID is read bit by bit (Krauss 3.2.3) and checked. A new decoder gets the first free address, is added to the refresh and receives a Bind; the serial port prints its UID and the line to add to `main.cpp`.
+- `MfxFrame::search()` (command 111 010), `MfxSignal::hold()` and `MfxSignal::feedbackWindows()`, with unit tests. Items now carry their duration.
+- **Reading of CVs** (data feedback, Krauss 2.2.8, 2.3.3, 3.2.1): `Feedback::readCV(sid, cv, index, bytes, out)` sends the read command (`MfxFrame::readCV()`, 111 000 + CV + index + count), then the data request: 11 synchronisations, bits 0011, and a pause with 25 µs clock pulses, 23 every 912 µs then 2 x (3 + 8n + 8 + 4) every 456 µs (`MfxSignal::dataWindow()`; 49.2 ms for 2 bytes, as measured on a Marklin Gleisbox). An interrupt times the rising edges of the comparator during the pause with the CPU cycle counter; `MfxDemod` (`lib/MfxDemod`) measures the carrier period, follows its phase, finds the 180° phase changes, decodes the bi-phase bits, finds the preamble 010 and checks the checksum. Two tries per read.
+- The read CV frames are identical, bit for bit, to frames recorded on the track of a Gleisbox; `MfxDemod` is tested on four answers recorded there (CV 000/00, 080/00, 003/01, 02F/01), on synthetic answers (noise, drift, false edges at the pulses) and on error cases.
+- `Discovery::readName()`: name of the locomotive (CV 003/01 on, 16 characters). Read for each new decoder (printed with the line for `main.cpp`) and, as a test, for every declared locomotive when the track is first powered.
+- Room for 16 locomotives (`MAX_LOCOS`): the declared ones and those found by the discovery. `Message::addLoco()`; the locomotive map is protected by a mutex.
+
+### Changed
+- RMT channel: the 8 memory blocks (512 items), so that a chunk with a data feedback of 8 bytes (up to 395 items) fits without refill.
+- After a feedback request, the signal task sends one chunk from `mfxQueue` before the next request: the locomotives keep their refresh during a search.
+
 ### Fixed
 - **Bit stuffing sent one bit too many** (new finding): after each inserted 0, the encoder read one more byte after the end of the frame and sent it on the track before the synchronisation. It concerned every frame with 8 consecutive 1 bits, for example the address assignment of the 150 X 5 (UID `FF E9 B1 94`).
 - **Signal gaps** (#6): with nothing to send, the signal task sent a 0.5 ms synchronisation then slept 1 ms, leaving the track about 0.5 ms without transition at the RMT idle level; the level variable ignored this idle level, which could remove the expected transition at the start of the next chunk. The signal is now continuous (see below).
