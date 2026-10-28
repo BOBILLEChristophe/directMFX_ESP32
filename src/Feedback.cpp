@@ -81,9 +81,13 @@ static volatile uint16_t sWindowRegular = 0;
 // Trigger for an oscilloscope (setScope())
 static gpio_num_t sScopePin = GPIO_NUM_NC;
 static Feedback::ScopeMode sScopeMode = Feedback::SCOPE_OFF;
+static uint16_t sScopeSid = 0;          // 0: every address
+static volatile uint16_t sReadSid = 0;  // address of the read in progress
 static inline void scope(bool data, bool level)
 {
     if (sScopePin == GPIO_NUM_NC)
+        return;
+    if (data && level && sScopeSid != 0 && sReadSid != sScopeSid)
         return;
     if (sScopeMode == Feedback::BOTH || sScopeMode == (data ? Feedback::DATA : Feedback::ONE_BIT))
         gpio_set_level(sScopePin, level);
@@ -222,8 +226,9 @@ void Feedback::onTimer(void *arg)
     }
 }
 
-void Feedback::setScope(gpio_num_t pin, ScopeMode mode)
+void Feedback::setScope(gpio_num_t pin, ScopeMode mode, uint16_t sid)
 {
+    sScopeSid = sid;
     if (sScopePin != GPIO_NUM_NC)
         gpio_set_level(sScopePin, 0);
     sScopeMode = mode;
@@ -241,8 +246,11 @@ void Feedback::setScope(gpio_num_t pin, ScopeMode mode)
     io.intr_type = GPIO_INTR_DISABLE;
     gpio_config(&io);
     gpio_set_level(pin, 0);
-    Serial.printf("Feedback: oscilloscope trigger on GPIO %d (%s)\n", (int)pin,
+    Serial.printf("Feedback: oscilloscope trigger on GPIO %d (%s", (int)pin,
                   mode == ONE_BIT ? "1-bit feedback" : mode == DATA ? "reading of CVs" : "both");
+    if (sid != 0 && mode != ONE_BIT)
+        Serial.printf(", reads of address %u only", sid);
+    Serial.println(")");
 }
 
 void Feedback::windowsStarted(int64_t startUs, uint32_t windowUs, uint32_t referenceUs)
@@ -411,6 +419,7 @@ bool Feedback::readCV(uint16_t sid, uint16_t cv, uint8_t index, uint8_t bytes, u
     static TickType_t lastRead = 0;
     bool ok = false;
     xSemaphoreTake(sMutex, portMAX_DELAY);
+    sReadSid = sid;
     for (uint8_t i = 0; i < 2 && !ok; i++)
     {
         const TickType_t since = xTaskGetTickCount() - lastRead;

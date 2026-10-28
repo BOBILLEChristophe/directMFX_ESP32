@@ -227,7 +227,8 @@ void setup()
   // Trigger for an oscilloscope on GPIO 25 (free pin): high during the
   // windows of the 1-bit feedback (ONE_BIT), during the answer to a read
   // CV (DATA), or both (BOTH). SCOPE_OFF: pin not used.
-  Feedback::setScope(GPIO_NUM_25, Feedback::DATA);
+  // Third parameter: only the reads of this address (0: every address).
+  Feedback::setScope(GPIO_NUM_25, Feedback::DATA, 5);
 
   // Initialize RMTChannel
   RMTChannel::setup(IN1_pin, IN2_pin);
