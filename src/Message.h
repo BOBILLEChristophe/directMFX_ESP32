@@ -24,6 +24,10 @@ const byte BUFF_MSG_SIZE = 100;
 #define CAN_LOCO_DIREC 0x05
 #define CAN_LOCO_FUNCT 0x06
 #define CAN_MFX_BIND 0x02           // assignment of a rail address (UID, SID)
+// Period of the command station frame (111 101, UID and counter), in ms.
+// A Marklin MS2 with its Gleisbox sends it every 46 ms (recorded on the
+// track); it was 500 ms before.
+#define STATION_PERIOD_MS 50
 #define CAN_PING 0x18               // who is on the bus? (answered as a CS2)
 #define CAN_CONFIG_DATA 0x20        // request of a configuration file ("loks"...)
 #define CAN_CONFIG_DATA_STREAM 0x21 // the file

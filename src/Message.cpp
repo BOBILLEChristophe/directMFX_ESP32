@@ -143,7 +143,8 @@ void Message::centrale(void *p)
             if (trace)
                 Serial.println("Centrale");
 
-            // Broadcast: command station UID and re-registration counter.
+            // Broadcast: command station UID and re-registration counter,
+            // every STATION_PERIOD_MS (a Marklin MS2 sends it every 46 ms).
             // The counter only changes on explicit request: a decoder that
             // sees it change registers again.
             MfxFrame frame;
@@ -154,7 +155,7 @@ void Message::centrale(void *p)
             xQueueSend(mfxQueue, &buff, 0);
             xSemaphoreGive(taskSemaphore);
         }
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(STATION_PERIOD_MS));
     }
 }
 

@@ -48,7 +48,9 @@ bool Discovery::probe(uint8_t count, uint32_t uid)
 
 bool Discovery::findUid(uint32_t *found)
 {
-    if (!probe(0, 0))
+    // Count 0: every decoder not yet registered answers, whatever the UID.
+    // The UID is all ones, as a Marklin MS2 sends it.
+    if (!probe(0, 0xFFFFFFFFUL))
         return false;
 
     // Bit by bit, from the most significant one: keep a 0 when a decoder
