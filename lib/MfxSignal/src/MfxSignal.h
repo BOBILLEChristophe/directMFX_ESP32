@@ -48,10 +48,18 @@ class MfxSignal
 public:
     static const uint16_t HALF_US = 50; // half of a bit
 
-    // 1-bit feedback (Krauss; sequence as measured by Alyda on real decoders)
-    static const uint8_t FEEDBACK_SYNCS = 11;     // synchronisations after the frame
-    static const uint16_t FEEDBACK_WINDOW_US = 6400; // window of the answer
-    static const uint8_t FEEDBACK_END_SYNCS = 2;  // synchronisations at the end
+    // Feedback request, as a Marklin MS2 with its Gleisbox sends it (recorded
+    // on the track, October 2026): the question (search, verify, read CV),
+    // a synchronisation, the command station frame (111 101), then
+    // 2 synchronisations, the bits 0011 and windows of 6.0 ms.
+    // A recent ESU decoder (040 DE 9) answers this request, but did not
+    // answer the former one (11 synchronisations, windows of 6.4 ms).
+    static const uint8_t FEEDBACK_SYNCS = 2;         // synchronisations before 0011
+    static const uint16_t FEEDBACK_WINDOW_US = 6000; // window of the answer
+    static const uint8_t FEEDBACK_END_SYNCS = 2;     // synchronisations at the end
+    // Frame inserted between the question and the request (the command
+    // station frame: 9 + 6 + 32 + 16 + 8 = 71 bits), at most
+    static const uint8_t INSERT_MAX_BITS = 71;
 
     // Data feedback (Krauss 2.2.8, timing measured on a Marklin Gleisbox)
     static const uint16_t DATA_CLOCK_US = 912;   // one clock = one bit
@@ -67,10 +75,12 @@ public:
     }
 
     // Room for the longest chunk: sync + 128-bit frame + stuffing
-    //   + data feedback of 8 bytes: 11 syncs, 4 bits, pause (one item per
+    //   + sync + inserted frame + stuffing
+    //   + data feedback of 8 bytes: syncs, 4 bits, pause (one item per
     //   pulse, plus one), sync. The 1-bit feedback is shorter.
-    static const uint16_t MAX_ITEMS = 5 + 128 + 16 + 5 * FEEDBACK_SYNCS + 4 +
-                                      DATA_LEAD_CLOCKS + 2 * (3 + 8 * DATA_MAX_BYTES + 8 + 4) + 1 + 5;
+    static const uint16_t MAX_ITEMS = 5 + 128 + 16 + 5 + INSERT_MAX_BITS + INSERT_MAX_BITS / 8 +
+                                      5 * FEEDBACK_SYNCS + 4 + DATA_LEAD_CLOCKS +
+                                      2 * (3 + 8 * DATA_MAX_BYTES + 8 + 4) + 1 + 5;
 
     MfxSignal() : mCount(0), mLevel(false), mOverflow(false) {}
 
@@ -101,24 +111,27 @@ public:
     void hold(uint32_t us);
 
     // Request for a 1-bit feedback, to add after the frame:
-    //   11 synchronisations, bits 0011,
+    //   [synchronisation, the frame `insert` (format of MfxFrame::toBuffer()),
+    //   if not null: the MS2 sends its command station frame there,]
+    //   FEEDBACK_SYNCS synchronisations, bits 0011,
     //   window of 6.4 ms (the decoder answers here),
     //   synchronisation, reference window of 6.4 ms (no answer),
     //   2 synchronisations.
     // windowUs and referenceUs receive the start time of the two windows,
     // in µs from the start of the chunk.
-    void feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs);
+    void feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs, const uint8_t *insert = nullptr);
 
     // Request for a data feedback of `bytes` bytes (1, 2, 4 or 8), to add
     // after a read CV frame:
-    //   11 synchronisations, bits 0011,
+    //   [synchronisation and the frame `insert`, as for feedbackWindows(),]
+    //   FEEDBACK_SYNCS synchronisations, bits 0011,
     //   pause at constant level with a short pulse of the opposite level at
     //   the end of each period: 23 periods of 912 µs, then 2 x dataClocks()
     //   periods of 456 µs, then 50 µs,
     //   synchronisation.
     // pauseUs receives the start time of the pause, in µs from the start of
     // the chunk. It lasts dataPauseUs(bytes).
-    void dataWindow(uint8_t bytes, uint32_t *pauseUs);
+    void dataWindow(uint8_t bytes, uint32_t *pauseUs, const uint8_t *insert = nullptr);
 
     // Duration of the items, in µs
     uint32_t durationUs() const;
@@ -128,6 +141,8 @@ public:
     bool overflow() const { return mOverflow; }
 
 private:
+    // Start of a feedback request: optional inserted frame, syncs, 0011
+    void request(const uint8_t *insert);
     void push(bool level0, bool level1, uint16_t duration0 = HALF_US, uint16_t duration1 = HALF_US);
 
     MfxItem mItems[MAX_ITEMS];

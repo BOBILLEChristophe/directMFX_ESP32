@@ -34,14 +34,24 @@ uint32_t MfxSignal::durationUs() const
     return us;
 }
 
-void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs)
+void MfxSignal::request(const uint8_t *insert)
 {
+    if (insert)
+    {
+        sync();
+        frame(insert);
+    }
     for (uint8_t i = 0; i < FEEDBACK_SYNCS; i++)
         sync();
     bit0();
     bit0();
     bit1();
     bit1();
+}
+
+void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs, const uint8_t *insert)
+{
+    request(insert);
 
     if (windowUs)
         *windowUs = durationUs();
@@ -57,16 +67,11 @@ void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs)
         sync();
 }
 
-void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs)
+void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs, const uint8_t *insert)
 {
     if (bytes > DATA_MAX_BYTES)
         bytes = DATA_MAX_BYTES;
-    for (uint8_t i = 0; i < FEEDBACK_SYNCS; i++)
-        sync();
-    bit0();
-    bit0();
-    bit1();
-    bit1();
+    request(insert);
 
     if (pauseUs)
         *pauseUs = durationUs();

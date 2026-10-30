@@ -321,7 +321,7 @@ void test_feedback_windows()
     s.feedbackWindows(&window, &reference);
     TEST_ASSERT_FALSE(s.overflow());
 
-    // sync + frame + 11 syncs + 0011, 100 µs each
+    // sync + frame + FEEDBACK_SYNCS syncs + 0011, 100 µs each
     const uint16_t before = 5 + frameItems + 5 * MfxSignal::FEEDBACK_SYNCS + 4;
     TEST_ASSERT_EQUAL_UINT32(before * 100UL, window);
     TEST_ASSERT_EQUAL_UINT32(window + MfxSignal::FEEDBACK_WINDOW_US + 500, reference);
@@ -366,7 +366,7 @@ void test_data_window()
         s.dataWindow(bytes, &pause);
         TEST_ASSERT_FALSE(s.overflow());
 
-        // sync + frame + 11 syncs + 0011, 100 µs each
+        // sync + frame + FEEDBACK_SYNCS syncs + 0011, 100 µs each
         const uint16_t before = 5 + frameItems + 5 * MfxSignal::FEEDBACK_SYNCS + 4;
         TEST_ASSERT_EQUAL_UINT32(before * 100UL, pause);
         uint8_t bits[4];
@@ -403,19 +403,70 @@ void test_data_window()
     TEST_ASSERT_EQUAL_UINT32(63840, MfxSignal::dataPauseUs(4));
 }
 
-// The longest frame with a data feedback of 8 bytes still fits
+// As the MS2: question, sync, command station frame, 2 syncs, 0011, window
+void test_feedback_with_inserted_frame()
+{
+    MfxFrame q;
+    q.broadcast();
+    q.search(0, 0xFFFFFFFF);
+    q.finish();
+    frameToBuffer(q);
+    uint8_t question[sizeof(buff)];
+    memcpy(question, buff, sizeof(buff));
+
+    MfxFrame st;
+    st.broadcast();
+    st.centrale(0x4746767E, 4);
+    st.finish();
+    uint8_t station[140];
+    TEST_ASSERT_TRUE(st.toBuffer(station, sizeof(station)));
+
+    MfxSignal ref; // the same without the inserted frame
+    ref.sync();
+    ref.frame(question);
+    uint32_t w0 = 0, r0 = 0;
+    ref.feedbackWindows(&w0, &r0);
+
+    MfxSignal s;
+    s.sync();
+    s.frame(question);
+    const uint32_t afterQuestion = s.durationUs();
+    MfxSignal alone; // the inserted frame alone, from the same level
+    alone.setLevel(s.level());
+    alone.sync();
+    alone.frame(station);
+    uint32_t w = 0, r = 0;
+    s.feedbackWindows(&w, &r, station);
+    TEST_ASSERT_FALSE(s.overflow());
+    // The window starts later by the length of sync + inserted frame
+    TEST_ASSERT_EQUAL_UINT32(w0 + alone.durationUs(), w);
+    TEST_ASSERT_EQUAL_UINT32(w + MfxSignal::FEEDBACK_WINDOW_US + 500, r);
+    TEST_ASSERT_TRUE(w > afterQuestion + alone.durationUs());
+    // 2 syncs + 0011 between the inserted frame and the window
+    TEST_ASSERT_EQUAL_UINT32(afterQuestion + alone.durationUs() + 5 * 100 * MfxSignal::FEEDBACK_SYNCS + 400, w);
+    TEST_ASSERT_EQUAL_UINT16(6000, MfxSignal::FEEDBACK_WINDOW_US);
+    TEST_ASSERT_EQUAL_UINT8(2, MfxSignal::FEEDBACK_SYNCS);
+}
+
+// The longest frame, the longest inserted frame and a data feedback of 8
+// bytes still fit (all 1 bits: the most stuffing)
 void test_longest_data_chunk_fits()
 {
     uint8_t big[130];
     big[0] = 128;
     for (uint8_t i = 1; i <= 128; i++)
         big[i] = 1;
+    uint8_t ins[MfxSignal::INSERT_MAX_BITS + 1];
+    ins[0] = MfxSignal::INSERT_MAX_BITS;
+    for (uint8_t i = 1; i <= MfxSignal::INSERT_MAX_BITS; i++)
+        ins[i] = 1;
     MfxSignal s;
     s.sync();
     s.frame(big);
-    s.dataWindow(8, nullptr);
+    s.dataWindow(8, nullptr, ins);
     TEST_ASSERT_FALSE(s.overflow());
     TEST_ASSERT_EQUAL_UINT16(MfxSignal::MAX_ITEMS, s.count());
+    TEST_ASSERT_TRUE(MfxSignal::MAX_ITEMS <= 512 - 1); // RMT memory, end marker
 }
 
 int main()
@@ -430,6 +481,7 @@ int main()
     RUN_TEST(test_hold_keeps_level);
     RUN_TEST(test_feedback_windows);
     RUN_TEST(test_data_window);
+    RUN_TEST(test_feedback_with_inserted_frame);
     RUN_TEST(test_longest_data_chunk_fits);
     return UNITY_END();
 }
