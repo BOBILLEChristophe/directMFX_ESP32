@@ -388,8 +388,9 @@ bool Feedback::readOnce(const uint8_t *frame, uint8_t bytes, uint8_t *out)
     }
     const uint16_t n = sEdgeCount;
     const MfxDemod::Status st = sDemod.decode(sEdges, n, (float)getCpuFrequencyMhz(), bytes, out);
-    // A missing decoder gives no carrier: nothing to tell
-    if (sTrace && st != MfxDemod::OK && st != MfxDemod::NO_CARRIER)
+    // Every read is traced, with the number of edges captured: tells a
+    // comparator that sees nothing from a demodulation problem
+    if (sTrace)
         Serial.printf("Feedback: read CV, %u edges, carrier %.2f us, %u runs -> %s\n  bits: %s\n", n,
                       sDemod.periodUs(), sDemod.runs(), MfxDemod::statusText(st), sDemod.bits());
     return st == MfxDemod::OK;
