@@ -33,7 +33,14 @@ void Discovery::setup()
  Search: do decoders not yet registered have a UID starting with the first
  `count` bits of `uid`? A "no" is asked twice: one missed answer would give
  a wrong bit (the final check would then fail, and the search restart).
+
+ After an answer, the next question waits ANSWER_PAUSE_MS, as the Gleisbox
+ does (130 to 175 ms measured, October 2026; 38 ms only after a "no"): an
+ ESU decoder (040 DE 9) that has just answered ignores a question sent
+ 30 ms later, which made the search lose a bit every time.
 */
+static const uint32_t ANSWER_PAUSE_MS = 150;
+
 bool Discovery::probe(uint8_t count, uint32_t uid)
 {
     MfxFrame f;
@@ -42,10 +49,20 @@ bool Discovery::probe(uint8_t count, uint32_t uid)
     f.finish();
     for (uint8_t i = 0; i < TRIES; i++)
         if (Feedback::ask(f))
+        {
+            vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
             return true;
+        }
     return false;
 }
 
+/*
+ As the Gleisbox (recorded, October 2026): each bit is first asked at 1
+ (the rest of the UID all ones). An answer keeps the 1. Without an answer
+ the bit is 0, and the question is asked again with the 0: the decoder must
+ answer it, otherwise the search stops (a missed answer, or the decoder
+ left the track) and starts again later.
+*/
 bool Discovery::findUid(uint32_t *found)
 {
     // Count 0: every decoder not yet registered answers, whatever the UID.
@@ -53,18 +70,15 @@ bool Discovery::findUid(uint32_t *found)
     if (!probe(0, 0xFFFFFFFFUL))
         return false;
 
-    // Bit by bit, from the most significant one: keep a 0 when a decoder
-    // answers, a 1 otherwise.
     uint32_t uid = 0xFFFFFFFFUL;
     for (uint8_t count = 1; count <= 32; count++)
     {
-        const uint32_t test = uid & ~(1UL << (32 - count));
-        if (probe(count, test))
-            uid = test;
+        if (probe(count, uid))
+            continue; // the bit is 1
+        uid &= ~(1UL << (32 - count));
+        if (!probe(count, uid))
+            return false; // neither 1 nor 0: start again
     }
-
-    if (!probe(32, uid))
-        return false;
     *found = uid;
     return true;
 }
