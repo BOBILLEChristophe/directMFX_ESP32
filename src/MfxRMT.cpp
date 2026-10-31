@@ -11,11 +11,10 @@
      starts the new one at once.
    - A chunk is either a frame between two synchronisations, or a single
      synchronisation when there is nothing to send.
-   - Between two chunks the RMT is briefly idle (the time to copy the start
-     of the next chunk into the RMT memory, kept short by a small memory,
-     see setup()). Its idle level is set to the level of the end of the
-     chunk being sent, so the line keeps its level: no spurious transition,
-     only the last half-bit of a synchronisation is a little longer.
+   - Between two chunks the RMT is briefly idle (a few tens of µs). Its idle
+     level is set to the level of the end of the chunk being sent, so the
+     line keeps its level: no spurious transition, only the last half-bit
+     of a synchronisation is a little longer.
    - A feedback request (Feedback.h) is sent before the other frames. The
      time at which its chunk starts is handed to Feedback, which counts the
      decoder answer in the windows (1-bit feedback) or times the edges of
@@ -49,15 +48,12 @@ void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
     config.gpio_num = (gpio_num_t)IN1_pin;
     config.tx_config.idle_output_en = true;
     config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
-    // 2 blocks of 64 items. rmt_write_items() copies a chunk into the RMT
-    // memory only once the previous chunk has ended, and the line stays idle
-    // meanwhile: with 8 blocks (a whole chunk of up to 434 items copied at
-    // once) the last half-bit of the previous chunk was 20 to 80 µs too long
-    // (120 to 180 µs instead of 100, measured with the sniffer, October
-    // 2026; the Gleisbox never exceeds 101 µs). With 2 blocks only the first
-    // 128 items are copied before the start; the driver refills the rest by
-    // interrupt, half a memory (64 items, at least 6 ms of signal) ahead.
-    config.mem_block_num = 2;
+    // The 8 blocks of 64 items (the whole RMT memory, no other channel is
+    // used): the longest chunk (MfxSignal::MAX_ITEMS = 434, a frame with
+    // the command station frame and a data feedback of 8 bytes) fits in the
+    // RMT memory (512 items), with room for the end marker: no refill by
+    // interrupt during the transmission.
+    config.mem_block_num = 8;
 
     // Signal inversé : IN2 reçoit la sortie du RMT, inversée par la matrice GPIO.
     // esp_rom_gpio_* existe avec le core Arduino 2.x (ESP-IDF 4.4) comme 3.x (ESP-IDF 5),
