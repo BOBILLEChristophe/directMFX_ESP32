@@ -88,6 +88,10 @@ static bool readFromTrack(void *ctx, uint16_t cv, uint8_t index, uint8_t bytes, 
         sMoving = true; // running, or the track was switched off: later
         return false;
     }
+    // Read 2 bytes at a time, as the MS2 does: the 040 DE 9 (ESU) answered
+    // only 45 % of the 4-byte reads, and every 2-byte read (October 2026)
+    if (bytes == 4)
+        return Feedback::readCV(sid, cv, index, 2, out) && Feedback::readCV(sid, cv, index + 2, 2, out + 2);
     return Feedback::readCV(sid, cv, index, bytes, out);
 }
 
