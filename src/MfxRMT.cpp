@@ -19,6 +19,9 @@
      time at which its chunk starts is handed to Feedback, which counts the
      decoder answer in the windows (1-bit feedback) or times the edges of
      the answer during the pause (data feedback, reading CVs).
+   - After a feedback request and after a bind, the line is held still for
+     1.6 ms, as the Gleisbox does (MfxSignal::END_HOLD_US). The idle time
+     between two chunks then falls in that hold.
    - As a Marklin MS2 does, the command station frame (UID and counter) is
      inserted between the question and the feedback request (MfxSignal).
 
@@ -146,6 +149,8 @@ void RMTChannel::signalTask(void *parameter)
             signal.sync();
             signal.frame(frame);
             signal.sync();
+            if (MfxFrame::isBind(frame))
+                signal.hold(MfxSignal::END_HOLD_US); // as the Gleisbox
         }
         else
         {

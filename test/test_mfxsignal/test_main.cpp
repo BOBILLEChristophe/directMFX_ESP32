@@ -329,8 +329,15 @@ void test_feedback_windows()
     TEST_ASSERT_EQUAL_UINT32(before * 100UL + (flip ? 2 * MfxSignal::FORCE_US : 0), window);
     // the reference window always needs a flip (the sync keeps the level)
     TEST_ASSERT_EQUAL_UINT32(window + MfxSignal::FEEDBACK_WINDOW_US + 500 + 2 * MfxSignal::FORCE_US, reference);
-    TEST_ASSERT_EQUAL_UINT32(reference + MfxSignal::FEEDBACK_WINDOW_US + 5 * 100 * MfxSignal::FEEDBACK_END_SYNCS,
+    TEST_ASSERT_EQUAL_UINT32(reference + MfxSignal::FEEDBACK_WINDOW_US + 5 * 100 * MfxSignal::FEEDBACK_END_SYNCS +
+                                 MfxSignal::END_HOLD_US,
                              s.durationUs());
+    // The hold at the end: no transition, as the Gleisbox (1.59 ms measured
+    // from the last transition, the last half-bit of the sync included)
+    const MfxItem &end = s.item(s.count() - 1);
+    TEST_ASSERT_EQUAL(end.level0, end.level1);
+    TEST_ASSERT_EQUAL(s.item(s.count() - 2).level1, end.level0);
+    TEST_ASSERT_EQUAL_UINT32(1594, 100 + (uint32_t)end.duration0 + end.duration1);
 
     // The bits 0011 just before the window, and no transition in the windows
     uint8_t bits[4];
@@ -459,9 +466,10 @@ void test_data_window()
         TEST_ASSERT_EQUAL(l, back.level0);
         TEST_ASSERT_EQUAL(l, back.level1);
 
-        // Then one synchronisation, and the chunk ends at the pause level
-        TEST_ASSERT_EQUAL_UINT16(before + pulses + 1 + 5, s.count());
-        TEST_ASSERT_EQUAL_UINT32(t + 50 + 500, s.durationUs());
+        // Then two synchronisations and the hold, as the Gleisbox; the
+        // chunk ends at the pause level
+        TEST_ASSERT_EQUAL_UINT16(before + pulses + 1 + 5 * MfxSignal::DATA_END_SYNCS + 1, s.count());
+        TEST_ASSERT_EQUAL_UINT32(t + 50 + 500 * MfxSignal::DATA_END_SYNCS + MfxSignal::END_HOLD_US, s.durationUs());
         TEST_ASSERT_EQUAL(l, s.level());
     }
     // Pause lengths measured on the Gleisbox: 49.1 ms (2 bytes), 63.5 ms (4 bytes)

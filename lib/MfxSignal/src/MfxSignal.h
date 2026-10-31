@@ -56,7 +56,14 @@ public:
     // answer the former one (11 synchronisations, windows of 6.4 ms).
     static const uint8_t FEEDBACK_SYNCS = 2;         // synchronisations before 0011
     static const uint16_t FEEDBACK_WINDOW_US = 6000; // window of the answer
-    static const uint8_t FEEDBACK_END_SYNCS = 2;     // synchronisations at the end
+    static const uint8_t FEEDBACK_END_SYNCS = 1;     // synchronisations at the end
+    static const uint8_t DATA_END_SYNCS = 2;         // after the data pause
+    // After a feedback request (windows or data pause) and after a bind, the
+    // Gleisbox holds the track still: 1.59 ms from the last transition of the
+    // final synchronisation (its last 100 µs half-bit included). Measured,
+    // October 2026. It is also where the short idle time between two RMT
+    // chunks falls, out of the synchronisations.
+    static const uint16_t END_HOLD_US = 1494;
     // Level of the track during the answer window (the data pause too), and
     // the opposite level during the reference window. The Gleisbox always
     // holds its answer window at the same polarity of the track, whatever
@@ -92,7 +99,7 @@ public:
     //   pulse, plus one), sync. The 1-bit feedback is shorter.
     static const uint16_t MAX_ITEMS = 5 + 128 + 16 + 5 + INSERT_MAX_BITS + INSERT_MAX_BITS / 8 +
                                       5 * FEEDBACK_SYNCS + 4 + 1 + DATA_LEAD_CLOCKS +
-                                      2 * (3 + 8 * DATA_MAX_BYTES + 8 + 4) + 1 + 5;
+                                      2 * (3 + 8 * DATA_MAX_BYTES + 8 + 4) + 1 + 5 * DATA_END_SYNCS + 1;
 
     MfxSignal() : mCount(0), mLevel(false), mOverflow(false) {}
 
@@ -128,7 +135,7 @@ public:
     //   FEEDBACK_SYNCS synchronisations, bits 0011,
     //   window of 6.0 ms at windowLevel (the decoder answers here),
     //   synchronisation, reference window of 6.0 ms at !windowLevel (no answer),
-    //   2 synchronisations.
+    //   FEEDBACK_END_SYNCS synchronisation, END_HOLD_US without transition.
     // A window at the wrong level after the bits before it starts with a flip
     // item: FORCE_US at the current level, then FORCE_US at the right one.
     // windowUs and referenceUs receive the start time of the two windows,
@@ -142,7 +149,7 @@ public:
     //   pause at windowLevel with a short pulse of the opposite level at
     //   the end of each period: 23 periods of 912 µs, then 2 x dataClocks()
     //   periods of 456 µs, then 50 µs,
-    //   synchronisation.
+    //   DATA_END_SYNCS synchronisations, END_HOLD_US without transition.
     // pauseUs receives the start time of the pause, in µs from the start of
     // the chunk. It lasts dataPauseUs(bytes).
     void dataWindow(uint8_t bytes, uint32_t *pauseUs, const uint8_t *insert = nullptr);

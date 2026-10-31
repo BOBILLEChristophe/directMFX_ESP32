@@ -140,6 +140,26 @@ void MfxFrame::finish()
     put(crc(*this, mSize), 8);
 }
 
+bool MfxFrame::isBind(const uint8_t *buff)
+{
+    const uint8_t n = buff[0];
+    // Address: 10 + 7 bits, 110 + 9, 1110 + 11, 1111 + 14 (address())
+    uint8_t ones = 0;
+    while (ones < 4 && ones + 1 <= n && buff[1 + ones])
+        ones++;
+    static const uint8_t lengths[5] = {0, 2 + 7, 3 + 9, 4 + 11, 4 + 14};
+    if (ones == 0)
+        return false;
+    const uint8_t cmd = lengths[ones]; // index of the first command bit (0-based)
+    static const uint8_t code[6] = {1, 1, 1, 0, 1, 1};
+    if (cmd + 6 > n)
+        return false;
+    for (uint8_t i = 0; i < 6; i++)
+        if (buff[1 + cmd + i] != code[i])
+            return false;
+    return true;
+}
+
 bool MfxFrame::toBuffer(uint8_t *buff, size_t buffSize) const
 {
     if (buffSize < (size_t)mSize + 1)

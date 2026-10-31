@@ -77,6 +77,7 @@ void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs, const
 
     for (uint8_t i = 0; i < FEEDBACK_END_SYNCS; i++)
         sync();
+    hold(END_HOLD_US);
 }
 
 void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs, const uint8_t *insert)
@@ -99,7 +100,9 @@ void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs, const uint8_t *inse
     push(l, l, HALF_US / 2, HALF_US / 2); // back to the pause level
     mLevel = l;
 
-    sync();
+    for (uint8_t i = 0; i < DATA_END_SYNCS; i++)
+        sync();
+    hold(END_HOLD_US);
 }
 
 void MfxSignal::bit0()
