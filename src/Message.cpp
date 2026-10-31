@@ -166,9 +166,29 @@ void Message::setSID(void *p)
     TickType_t xLastWakeTime;
     xLastWakeTime = xTaskGetTickCount();
 
+    /*
+     The binds are sent only for BIND_ROUNDS rounds after the track is
+     switched on, not every 500 ms for ever: a Gleisbox sends a bind only
+     while it registers a decoder, and an ESU decoder (040 DE 9) answered
+     only half of the questions while it heard about 9 binds a second
+     (October 2026). A decoder put on the track later, or that registered
+     elsewhere, answers the search: Discovery then sends its bind again.
+    */
+    static const uint8_t BIND_ROUNDS = 4;
+    uint8_t rounds = 0;
+    bool wasPowered = false;
+
     for (;;)
     {
-        if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
+        const bool powered = Centrale::power();
+        if (powered && !wasPowered)
+            rounds = 0; // the track has just been switched on
+        wasPowered = powered;
+        const bool send = powered && rounds < BIND_ROUNDS;
+        if (send)
+            rounds++;
+
+        if (send && xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
         {
             for (byte i = 0; i < locoSize; i++)
             {
