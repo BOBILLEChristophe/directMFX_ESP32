@@ -139,7 +139,11 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
     if (Loco *l = Loco::findLoco(sid))
     {
         l->mfxInfo(info);
-        Message::announceBind(l->uid32(), sid); // a test: does Rocrail create the locomotive?
+        // No bind announced to Rocrail for now: once a configuration was read
+        // completely, the announce made the locomotives stop answering speed
+        // and function commands (October 2026, found by testing the commits
+        // one by one). To be looked at with a capture of what Rocrail does.
+        // Message::announceBind(l->uid32(), sid);
     }
     if (nameOut && size)
     {
