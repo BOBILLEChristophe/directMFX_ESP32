@@ -97,8 +97,10 @@ MfxConfig::Status MfxConfig::read(ReadFn fn, void *ctx)
     mCtx = ctx;
     uint8_t b[4];
 
-    // Block 01 always starts at CV 000: 01 01 VV 00 GG LL
-    if (!get(0x000, 0, 4, b))
+    // Block 01 always starts at CV 000: 01 01 VV 00 GG LL. Only the first
+    // 2 bytes are read, as the MS2 does: an old ESU decoder (M4 of the
+    // 040 DE 9) gave a too short answer to a 4-byte read of this CV.
+    if (!get(0x000, 0, 2, b))
         return NO_ANSWER;
     if (b[0] != CA_BLOCK || b[1] != 0x01)
         return NO_BLOCK_TABLE;
