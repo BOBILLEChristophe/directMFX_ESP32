@@ -4,6 +4,8 @@
 
 #include "MfxSignal.h"
 
+bool MfxSignal::windowLevel = true;
+
 void MfxSignal::push(bool level0, bool level1, uint16_t duration0, uint16_t duration1)
 {
     if (mCount >= MAX_ITEMS)
@@ -47,6 +49,15 @@ void MfxSignal::request(const uint8_t *insert)
     bit0();
     bit1();
     bit1();
+    forceLevel(windowLevel);
+}
+
+void MfxSignal::forceLevel(bool level)
+{
+    if (mLevel == level)
+        return;
+    push(mLevel, level, FORCE_US, FORCE_US);
+    mLevel = level;
 }
 
 void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs, const uint8_t *insert)
@@ -58,6 +69,7 @@ void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs, const
     hold(FEEDBACK_WINDOW_US);
 
     sync();
+    forceLevel(!windowLevel);
 
     if (referenceUs)
         *referenceUs = durationUs();

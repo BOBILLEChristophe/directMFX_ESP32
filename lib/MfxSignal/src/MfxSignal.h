@@ -57,6 +57,18 @@ public:
     static const uint8_t FEEDBACK_SYNCS = 2;         // synchronisations before 0011
     static const uint16_t FEEDBACK_WINDOW_US = 6000; // window of the answer
     static const uint8_t FEEDBACK_END_SYNCS = 2;     // synchronisations at the end
+    // Level of the track during the answer window (the data pause too), and
+    // the opposite level during the reference window. The Gleisbox always
+    // holds its answer window at the same polarity of the track, whatever
+    // the bits sent before (recorded, October 2026: 237 requests out of 237):
+    // when the bits 0011 end at the other level, it adds a transition right
+    // after the last one (FORCE_US later). A recent ESU decoder answers only
+    // at that polarity. Which level of the RMT output it is depends on the
+    // wiring of the H-bridge to the track: set it with the sniffer, so that
+    // its R and D lines show the windows at the level the Gleisbox uses.
+    static bool windowLevel;
+    static const uint16_t FORCE_US = 2; // the two halves of the flip item
+
     // Frame inserted between the question and the request (the command
     // station frame: 9 + 6 + 32 + 16 + 8 = 71 bits), at most
     static const uint8_t INSERT_MAX_BITS = 71;
@@ -79,7 +91,7 @@ public:
     //   + data feedback of 8 bytes: syncs, 4 bits, pause (one item per
     //   pulse, plus one), sync. The 1-bit feedback is shorter.
     static const uint16_t MAX_ITEMS = 5 + 128 + 16 + 5 + INSERT_MAX_BITS + INSERT_MAX_BITS / 8 +
-                                      5 * FEEDBACK_SYNCS + 4 + DATA_LEAD_CLOCKS +
+                                      5 * FEEDBACK_SYNCS + 4 + 1 + DATA_LEAD_CLOCKS +
                                       2 * (3 + 8 * DATA_MAX_BYTES + 8 + 4) + 1 + 5;
 
     MfxSignal() : mCount(0), mLevel(false), mOverflow(false) {}
@@ -114,9 +126,11 @@ public:
     //   [synchronisation, the frame `insert` (format of MfxFrame::toBuffer()),
     //   if not null: the MS2 sends its command station frame there,]
     //   FEEDBACK_SYNCS synchronisations, bits 0011,
-    //   window of 6.4 ms (the decoder answers here),
-    //   synchronisation, reference window of 6.4 ms (no answer),
+    //   window of 6.0 ms at windowLevel (the decoder answers here),
+    //   synchronisation, reference window of 6.0 ms at !windowLevel (no answer),
     //   2 synchronisations.
+    // A window at the wrong level after the bits before it starts with a flip
+    // item: FORCE_US at the current level, then FORCE_US at the right one.
     // windowUs and referenceUs receive the start time of the two windows,
     // in µs from the start of the chunk.
     void feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs, const uint8_t *insert = nullptr);
@@ -124,8 +138,8 @@ public:
     // Request for a data feedback of `bytes` bytes (1, 2, 4 or 8), to add
     // after a read CV frame:
     //   [synchronisation and the frame `insert`, as for feedbackWindows(),]
-    //   FEEDBACK_SYNCS synchronisations, bits 0011,
-    //   pause at constant level with a short pulse of the opposite level at
+    //   FEEDBACK_SYNCS synchronisations, bits 0011, [flip item,]
+    //   pause at windowLevel with a short pulse of the opposite level at
     //   the end of each period: 23 periods of 912 µs, then 2 x dataClocks()
     //   periods of 456 µs, then 50 µs,
     //   synchronisation.
@@ -143,6 +157,9 @@ public:
 private:
     // Start of a feedback request: optional inserted frame, syncs, 0011
     void request(const uint8_t *insert);
+    // Brings the track to `level`: nothing if it is already there, else one
+    // item of 2 x FORCE_US with the transition in the middle
+    void forceLevel(bool level);
     void push(bool level0, bool level1, uint16_t duration0 = HALF_US, uint16_t duration1 = HALF_US);
 
     MfxItem mItems[MAX_ITEMS];

@@ -321,10 +321,14 @@ void test_feedback_windows()
     s.feedbackWindows(&window, &reference);
     TEST_ASSERT_FALSE(s.overflow());
 
-    // sync + frame + FEEDBACK_SYNCS syncs + 0011, 100 µs each
+    // sync + frame + FEEDBACK_SYNCS syncs + 0011, 100 µs each, then a flip
+    // item if the bits end at the other level than windowLevel
     const uint16_t before = 5 + frameItems + 5 * MfxSignal::FEEDBACK_SYNCS + 4;
-    TEST_ASSERT_EQUAL_UINT32(before * 100UL, window);
-    TEST_ASSERT_EQUAL_UINT32(window + MfxSignal::FEEDBACK_WINDOW_US + 500, reference);
+    const bool flip = s.item(before - 1).level1 != MfxSignal::windowLevel;
+    const uint16_t win = before + (flip ? 1 : 0);
+    TEST_ASSERT_EQUAL_UINT32(before * 100UL + (flip ? 2 * MfxSignal::FORCE_US : 0), window);
+    // the reference window always needs a flip (the sync keeps the level)
+    TEST_ASSERT_EQUAL_UINT32(window + MfxSignal::FEEDBACK_WINDOW_US + 500 + 2 * MfxSignal::FORCE_US, reference);
     TEST_ASSERT_EQUAL_UINT32(reference + MfxSignal::FEEDBACK_WINDOW_US + 5 * 100 * MfxSignal::FEEDBACK_END_SYNCS,
                              s.durationUs());
 
@@ -334,17 +338,75 @@ void test_feedback_windows()
     const uint8_t expected[4] = {0, 0, 1, 1};
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, bits, 4);
 
-    const MfxItem &w = s.item(before);
+    const MfxItem &w = s.item(win);
     TEST_ASSERT_EQUAL(w.level0, w.level1);
-    TEST_ASSERT_EQUAL(s.item(before - 1).level1, w.level0); // no transition at the start
+    TEST_ASSERT_EQUAL(MfxSignal::windowLevel, w.level0);
+    TEST_ASSERT_EQUAL(s.item(win - 1).level1, w.level0); // no transition at the start
     TEST_ASSERT_EQUAL_UINT32(MfxSignal::FEEDBACK_WINDOW_US, (uint32_t)w.duration0 + w.duration1);
 
-    const MfxItem &r = s.item(before + 1 + 5);
+    const MfxItem &r = s.item(win + 1 + 5 + 1);
     TEST_ASSERT_EQUAL(r.level0, r.level1);
-    TEST_ASSERT_EQUAL(s.item(before + 5).level1, r.level0);
+    TEST_ASSERT_EQUAL(!MfxSignal::windowLevel, r.level0);
+    TEST_ASSERT_EQUAL(s.item(win + 1 + 5).level1, r.level0);
 
     // The chunk ends at the level it reached, ready for the next one
     TEST_ASSERT_EQUAL(s.item(s.count() - 1).level1, s.level());
+}
+
+// The answer window is always at windowLevel and the reference window at
+// the other level, whatever the level the chunk starts from and the bits
+// before (as the Gleisbox does), for both settings of windowLevel
+void test_window_levels()
+{
+    const bool saved = MfxSignal::windowLevel;
+    for (uint8_t setting = 0; setting < 2; setting++)
+    {
+        MfxSignal::windowLevel = setting != 0;
+        for (uint8_t start = 0; start < 2; start++)
+            for (uint32_t uid = 0; uid < 4; uid++) // different bits: both parities
+            {
+                MfxFrame f;
+                f.broadcast();
+                f.search((uint8_t)uid, 0xFFFFFFF0 | uid);
+                f.finish();
+                frameToBuffer(f);
+                for (uint8_t kind = 0; kind < 2; kind++)
+                {
+                    MfxSignal s;
+                    s.setLevel(start != 0);
+                    s.sync();
+                    s.frame(buff);
+                    uint32_t w = 0, r = 0;
+                    if (kind == 0)
+                        s.feedbackWindows(&w, &r);
+                    else
+                        s.dataWindow(2, &w);
+                    TEST_ASSERT_FALSE(s.overflow());
+                    // Find the window by its start time, check its level
+                    uint32_t t = 0;
+                    bool seenW = false, seenR = false;
+                    for (uint16_t i = 0; i < s.count(); i++)
+                    {
+                        const MfxItem &it = s.item(i);
+                        if (t == w)
+                        {
+                            TEST_ASSERT_EQUAL(MfxSignal::windowLevel, it.level0);
+                            seenW = true;
+                        }
+                        if (kind == 0 && t == r)
+                        {
+                            TEST_ASSERT_EQUAL(!MfxSignal::windowLevel, it.level0);
+                            TEST_ASSERT_EQUAL(!MfxSignal::windowLevel, it.level1);
+                            seenR = true;
+                        }
+                        t += (uint32_t)it.duration0 + it.duration1;
+                    }
+                    TEST_ASSERT_TRUE(seenW);
+                    TEST_ASSERT_TRUE(kind == 1 || seenR);
+                }
+            }
+    }
+    MfxSignal::windowLevel = saved;
 }
 
 // Read CV (address 1, CV 003/01, 4 bytes) followed by the data feedback request
@@ -366,16 +428,20 @@ void test_data_window()
         s.dataWindow(bytes, &pause);
         TEST_ASSERT_FALSE(s.overflow());
 
-        // sync + frame + FEEDBACK_SYNCS syncs + 0011, 100 µs each
-        const uint16_t before = 5 + frameItems + 5 * MfxSignal::FEEDBACK_SYNCS + 4;
-        TEST_ASSERT_EQUAL_UINT32(before * 100UL, pause);
+        // sync + frame + FEEDBACK_SYNCS syncs + 0011, 100 µs each, then a
+        // flip item if the bits end at the other level than windowLevel
+        const uint16_t bits0011 = 5 + frameItems + 5 * MfxSignal::FEEDBACK_SYNCS + 4;
+        const bool flip = s.item(bits0011 - 1).level1 != MfxSignal::windowLevel;
+        const uint16_t before = bits0011 + (flip ? 1 : 0);
+        TEST_ASSERT_EQUAL_UINT32(bits0011 * 100UL + (flip ? 2 * MfxSignal::FORCE_US : 0), pause);
         uint8_t bits[4];
-        decode(s, before - 4, 4, s.item(before - 5).level1, bits);
+        decode(s, bits0011 - 4, 4, s.item(bits0011 - 5).level1, bits);
         const uint8_t expected[4] = {0, 0, 1, 1};
         TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, bits, 4);
 
         // The pause: one pulse at the end of each period, 23 x 912 µs then 456 µs
         const bool l = s.item(before - 1).level1;
+        TEST_ASSERT_EQUAL(MfxSignal::windowLevel, l);
         const uint16_t pulses = MfxSignal::DATA_LEAD_CLOCKS + 2 * MfxSignal::dataClocks(bytes);
         uint32_t t = pause;
         for (uint16_t i = 0; i < pulses; i++)
@@ -438,12 +504,15 @@ void test_feedback_with_inserted_frame()
     uint32_t w = 0, r = 0;
     s.feedbackWindows(&w, &r, station);
     TEST_ASSERT_FALSE(s.overflow());
-    // The window starts later by the length of sync + inserted frame
-    TEST_ASSERT_EQUAL_UINT32(w0 + alone.durationUs(), w);
-    TEST_ASSERT_EQUAL_UINT32(w + MfxSignal::FEEDBACK_WINDOW_US + 500, r);
+    // The window starts later by the length of sync + inserted frame (give
+    // or take the flip item, which depends on the bits before the window)
+    const uint32_t flipUs = 2 * MfxSignal::FORCE_US;
+    TEST_ASSERT_TRUE(w + flipUs >= w0 + alone.durationUs() && w <= w0 + alone.durationUs() + flipUs);
+    TEST_ASSERT_EQUAL_UINT32(w + MfxSignal::FEEDBACK_WINDOW_US + 500 + flipUs, r);
     TEST_ASSERT_TRUE(w > afterQuestion + alone.durationUs());
-    // 2 syncs + 0011 between the inserted frame and the window
-    TEST_ASSERT_EQUAL_UINT32(afterQuestion + alone.durationUs() + 5 * 100 * MfxSignal::FEEDBACK_SYNCS + 400, w);
+    // 2 syncs + 0011 (+ the flip item) between the inserted frame and the window
+    const uint32_t bare = afterQuestion + alone.durationUs() + 5 * 100 * MfxSignal::FEEDBACK_SYNCS + 400;
+    TEST_ASSERT_TRUE(w == bare || w == bare + flipUs);
     TEST_ASSERT_EQUAL_UINT16(6000, MfxSignal::FEEDBACK_WINDOW_US);
     TEST_ASSERT_EQUAL_UINT8(2, MfxSignal::FEEDBACK_SYNCS);
 }
@@ -465,7 +534,8 @@ void test_longest_data_chunk_fits()
     s.frame(big);
     s.dataWindow(8, nullptr, ins);
     TEST_ASSERT_FALSE(s.overflow());
-    TEST_ASSERT_EQUAL_UINT16(MfxSignal::MAX_ITEMS, s.count());
+    // MAX_ITEMS counts the flip item, needed or not
+    TEST_ASSERT_TRUE(s.count() == MfxSignal::MAX_ITEMS || s.count() + 1 == MfxSignal::MAX_ITEMS);
     TEST_ASSERT_TRUE(MfxSignal::MAX_ITEMS <= 512 - 1); // RMT memory, end marker
 }
 
@@ -480,6 +550,7 @@ int main()
     RUN_TEST(test_items_last_100_us);
     RUN_TEST(test_hold_keeps_level);
     RUN_TEST(test_feedback_windows);
+    RUN_TEST(test_window_levels);
     RUN_TEST(test_data_window);
     RUN_TEST(test_feedback_with_inserted_frame);
     RUN_TEST(test_longest_data_chunk_fits);
