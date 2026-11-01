@@ -475,16 +475,22 @@ static void console()
  turn with the search, as the MS2 does ("search, query SID 1, search, query
  SID 2..."). A decoder that receives no query for its own address during 5
  to 10 minutes is ready to register again: without them our decoders lost
- their registration. A locomotive that does not answer gets its bind again
- (at most every REBIND_MS): its decoder may have missed it, or may be back
- on the track.
+ their registration.
+
+ A locomotive that does not answer is not on the track: it gets no bind
+ (if it comes back without its address it answers the search, and gets its
+ bind there) and is queried again only every ABSENT_RETRY_MS, so that the
+ locomotives in a box do not take the track time. Its arrival and its
+ departure are written once in the log.
 */
-static const uint32_t REBIND_MS = 30000;
-static TickType_t sLastRebind[128];
+static const uint32_t ABSENT_RETRY_MS = 60000;
+static bool sAbsent[128];
+static TickType_t sAbsentSince[128];
 
 static void verifyNext()
 {
     static uint8_t next = 1;
+    const TickType_t now = xTaskGetTickCount();
     for (uint8_t k = 0; k < 127; k++)
     {
         const uint8_t a = next;
@@ -492,21 +498,21 @@ static void verifyNext()
         Loco *l = Loco::findLoco(a);
         if (l == nullptr)
             continue;
+        if (sAbsent[a] && now - sAbsentSince[a] < pdMS_TO_TICKS(ABSENT_RETRY_MS))
+            continue; // queried again later
         MfxFrame f;
         f.address(a);
         f.verify(l->uid32());
         f.finish();
-        if (Feedback::ask(f))
-        {
+        const bool yes = Feedback::ask(f);
+        if (yes != !sAbsent[a])
+            Serial.printf("Discovery: %s (address %u) %s\n", l->name().c_str(), a,
+                          yes ? "is on the track" : "does not answer, queried again every minute");
+        sAbsent[a] = !yes;
+        if (yes)
             vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
-            return;
-        }
-        const TickType_t now = xTaskGetTickCount();
-        if (sLastRebind[a] == 0 || now - sLastRebind[a] >= pdMS_TO_TICKS(REBIND_MS))
-        {
-            sLastRebind[a] = now;
-            sendBind(l);
-        }
+        else
+            sAbsentSince[a] = now;
         return;
     }
 }
