@@ -18,8 +18,16 @@
    ignored; same address with another UID -> the stored locomotive gets the
    first free address (its decoder receives it with the next bind).
 
-   save() writes every known locomotive. It is called when a new decoder is
-   registered (Discovery).
+   save() writes every known locomotive. It is called at start-up, after
+   load() (the locomotives of main.cpp are then kept even if their line is
+   removed later), and when a new decoder is registered (Discovery).
+
+   Why the command station must not forget (S. Krauss, 3.2.6): a decoder
+   that keeps receiving the track signal while the re-registration counter
+   is raised only stores the new value and does NOT register again; only
+   the decoders that were away (or without power long enough) do. Raising
+   the counter (R) is therefore not a reliable way to find a decoder the
+   command station forgot.
 
    Serial commands (Discovery): L lists the locomotives, E erases the
    memory and raises the counter (every decoder registers again).

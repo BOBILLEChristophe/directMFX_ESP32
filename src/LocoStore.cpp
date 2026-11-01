@@ -81,6 +81,11 @@ void LocoStore::load()
         added++;
     }
     Serial.printf("LocoStore: %u locomotive(s) in memory, %u added to those of main.cpp\n", n, added);
+    // The locomotives of main.cpp are stored too: once started with a
+    // line in main.cpp, a locomotive stays known after the line is removed
+    // (its decoder, registered here, keeps its address and stays silent
+    // to the search, see 3.2.6 in Krauss)
+    save();
 }
 
 void LocoStore::save()
