@@ -461,7 +461,24 @@ static void deleteLoco(uint16_t a)
     Loco *l = Loco::findLoco(a);
     if (l == nullptr)
     {
-        Serial.printf("\nDelete: no locomotive at address %u (serial command L to list)\n", a);
+        // Unknown here (bound by the master in another session, or forgotten
+        // while the track was off): its decoder may still have the address
+        if (!Centrale::power())
+        {
+            Serial.printf("\nDelete: address %u unknown, and the track is off: nothing done\n", a);
+            return;
+        }
+        for (uint8_t i = 0; i < 2; i++)
+        {
+            MfxFrame f;
+            f.address(a);
+            f.verify(0);
+            f.finish();
+            Feedback::ask(f);
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        Serial.printf("\nDelete: address %u sent to the decoders (UID 0): a decoder with this address registers again\n",
+                      a);
         return;
     }
     const String name = l->name();
