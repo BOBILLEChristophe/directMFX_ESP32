@@ -45,9 +45,15 @@ public:
     // receives the name read, null-terminated.
     static bool readConfig(uint16_t sid, char *name = nullptr, size_t size = 0);
 
+    // Orders of the master (Rocrail, MS2), as for a Gleisbox: done by the
+    // discovery task, which answers the master when it is done.
+    static void requestBind(uint32_t uid, uint16_t sid);   // CAN 0x02
+    static void requestVerify(uint32_t uid, uint16_t sid); // CAN 0x03
+
 private:
     static void task(void *);
     static bool probe(uint8_t count, uint32_t uid);
     static void registerDecoder(uint32_t uid);
+    static void masterOrders();
     static bool readDeclaredConfigs();
 };

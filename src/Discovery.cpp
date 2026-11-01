@@ -280,7 +280,7 @@ bool Discovery::readDeclaredConfigs()
 static const uint8_t BIND_REPEAT = 4;
 static const uint32_t BIND_SPACING_MS = 43;
 
-static void sendBind(Loco *l)
+static void sendBind(Loco *l, bool verify = true)
 {
     MfxFrame f;
     f.broadcast();
@@ -300,6 +300,9 @@ static void sendBind(Loco *l)
     }
     if (lost)
         Serial.printf("Discovery: %u bind(s) of address %u not sent (queue full)\n", lost, l->addr());
+
+    if (!verify)
+        return; // the master sends its own verify (CAN 0x03)
 
     // As the MS2: the bind is followed by an existence query at the new
     // address (C1: bind, then verify, which the decoder answers)
@@ -600,6 +603,123 @@ static void verifyNext()
     }
 }
 
+/*
+ Orders of the master (Rocrail as master, or an MS2), executed as a
+ Gleisbox does (recorded on the CAN bus, 31 Oct):
+   bind 0x02 (UID, SID): the bind sent 4 times on the track, then the same
+     6 bytes back, response bit set;
+   verify 0x03 (UID, SID): existence query on the track; answer with 7
+     bytes (UID, SID, quality FF) if the decoder answers, else 6 bytes with
+     the SID set to 0. With the UID 0, the decoder at SID forgets its address
+     (deletion by the MS2); answer: UID 0, SID 0.
+ The master gives the addresses: the locomotive at SID is created (or moved
+ there) with the UID, so that it is refreshed and queried.
+*/
+struct MasterOrder
+{
+    uint8_t type; // 2 bind, 3 verify
+    uint32_t uid;
+    uint16_t sid;
+};
+static QueueHandle_t sOrders = nullptr;
+
+static void postOrder(uint8_t type, uint32_t uid, uint16_t sid)
+{
+    if (sOrders == nullptr)
+        sOrders = xQueueCreate(8, sizeof(MasterOrder));
+    const MasterOrder o = {type, uid, sid};
+    if (sOrders == nullptr || xQueueSend(sOrders, &o, 0) != pdPASS)
+        Serial.println("Discovery: order of the master lost (queue full)");
+}
+
+void Discovery::requestBind(uint32_t uid, uint16_t sid) { postOrder(2, uid, sid); }
+void Discovery::requestVerify(uint32_t uid, uint16_t sid) { postOrder(3, uid, sid); }
+
+// The locomotive with this UID, at address sid (created or moved there)
+static Loco *locoAt(uint32_t uid, uint16_t sid)
+{
+    Loco *l = Loco::findByUid(uid);
+    if (l != nullptr && l->addr() == sid)
+        return l;
+    String name = l != nullptr ? l->name() : String("mfx ") + String(uid, HEX);
+    if (l != nullptr)
+    {
+        const uint8_t old = l->addr();
+        Message::removeLoco(old);
+        Loco::removeLoco(old);
+    }
+    if (Loco *other = Loco::findLoco(sid))
+    {
+        Serial.printf("Discovery: address %u was %s, given by the master to %08lX\n", sid, other->name().c_str(),
+                      (unsigned long)uid);
+        Message::removeLoco(sid);
+        Loco::removeLoco(sid);
+    }
+    l = Loco::createLoco(sid, name, uid >> 24, uid >> 16, uid >> 8, uid);
+    if (!Message::addLoco(l))
+        Serial.println("Discovery: too many locomotives, see MAX_LOCOS in main.cpp");
+    return l;
+}
+
+void Discovery::masterOrders()
+{
+    MasterOrder o;
+    while (sOrders != nullptr && xQueueReceive(sOrders, &o, 0) == pdPASS)
+    {
+        const uint8_t d[7] = {(uint8_t)(o.uid >> 24), (uint8_t)(o.uid >> 16), (uint8_t)(o.uid >> 8), (uint8_t)o.uid,
+                              (uint8_t)(o.sid >> 8), (uint8_t)o.sid, 0xFF};
+        if (o.sid == 0 || o.sid > 255)
+        {
+            Serial.printf("Discovery: SID %u not handled (1 to 255)\n", o.sid);
+            continue;
+        }
+        if (o.type == 2)
+        {
+            Loco *l = locoAt(o.uid, o.sid);
+            sendBind(l, false);
+            LocoStore::save();
+            Message::answer(CAN_MFX_BIND, 6, d);
+            Serial.printf("Discovery: bind of %08lX at address %u by the master, done\n", (unsigned long)o.uid,
+                          o.sid);
+            continue;
+        }
+        // verify
+        MfxFrame f;
+        f.address(o.sid);
+        f.verify(o.uid);
+        f.finish();
+        if (o.uid == 0)
+        {
+            // Deletion by the master: the decoder at sid forgets its address
+            Feedback::ask(f);
+            if (Loco::findLoco(o.sid) != nullptr)
+            {
+                Message::removeLoco(o.sid);
+                Loco::removeLoco(o.sid);
+                LocoStore::save();
+            }
+            const uint8_t none[6] = {0, 0, 0, 0, 0, 0};
+            Message::answer(CAN_MFX_VERIFY, 6, none);
+            Serial.printf("Discovery: address %u deleted by the master\n", o.sid);
+            continue;
+        }
+        Feedback::Result r;
+        const bool yes = Feedback::ask(f, &r) || r.windowRegular >= 20;
+        if (yes)
+        {
+            Message::answer(CAN_MFX_VERIFY, 7, d);
+            vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
+        }
+        else
+        {
+            const uint8_t no[6] = {d[0], d[1], d[2], d[3], 0, 0};
+            Message::answer(CAN_MFX_VERIFY, 6, no);
+        }
+        Serial.printf("Discovery: verify of %08lX at address %u by the master: %s (%u regular intervals)\n",
+                      (unsigned long)o.uid, o.sid, yes ? "answer" : "no answer", r.windowRegular);
+    }
+}
+
 void Discovery::task(void *)
 {
     vTaskDelay(pdMS_TO_TICKS(3000)); // let the decoders start
@@ -611,6 +731,7 @@ void Discovery::task(void *)
     for (;;)
     {
         console();
+        masterOrders();
         if (sRereadConfigs)
         {
             sRereadConfigs = false;
@@ -648,7 +769,15 @@ void Discovery::task(void *)
                     vTaskDelay(pdMS_TO_TICKS(SAME_DECODER_MS));
                 }
                 else
-                    registerDecoder(uid);
+                {
+                    // As a Gleisbox: the UID found goes to the master, which
+                    // chooses the address and sends the bind (CAN 0x02)
+                    const uint8_t d[5] = {(uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8),
+                                          (uint8_t)uid, 32};
+                    const bool sent = Message::answer(CAN_LOCO_DISCOVERY, sizeof(d), d);
+                    Serial.printf("Discovery: decoder %08lX found, reported to the master%s\n",
+                                  (unsigned long)uid, sent ? "" : " (NOT connected)");
+                }
                 last = uid;
                 lastTime = xTaskGetTickCount();
             }

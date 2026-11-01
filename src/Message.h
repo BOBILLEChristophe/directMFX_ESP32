@@ -28,6 +28,8 @@ const byte BUFF_MSG_SIZE = 100;
 // A Marklin MS2 with its Gleisbox sends it every 46 ms (recorded on the
 // track); it was 500 ms before.
 #define STATION_PERIOD_MS 50
+#define CAN_LOCO_DISCOVERY 0x01      // search of decoders (Lok Discovery)
+#define CAN_MFX_VERIFY 0x03          // existence query (UID, SID)
 #define CAN_STATUS_DATA 0x1D        // description of a device (Statusdaten Konfiguration)
 #define CAN_PING 0x18               // who is on the bus? (answered as a CS2)
 #define CAN_CONFIG_DATA 0x20        // request of a configuration file ("loks"...)
@@ -77,6 +79,10 @@ public:
     // MS2 does on the CAN bus when it registers a locomotive (command 0x02,
     // UID and SID), followed by the answer of the track box.
     static void announceBind(uint32_t uid, uint16_t sid);
+
+    // Sends to Rocrail an answer of this device (response bit set, hash of
+    // its UID): command cmd, len bytes of d.
+    static bool answer(uint8_t cmd, uint8_t len, const uint8_t *d);
 
 private:
     static void configRequest();

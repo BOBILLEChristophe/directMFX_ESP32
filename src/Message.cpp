@@ -9,6 +9,7 @@
 #include "Centrale.h"
 #include "MfxFrame.h"
 #include "Cs2Config.h"
+#include "Discovery.h"
 
 Loco **Message::loco = nullptr;
 volatile byte Message::locoSize = 0;
@@ -325,6 +326,21 @@ void Message::parse()
         return;
     }
 
+    // Orders of the master for the registration of the decoders (a Gleisbox
+    // executes them): bind and verify, UID then SID
+    if ((cmd == CAN_MFX_BIND || cmd == CAN_MFX_VERIFY) && length >= 6)
+    {
+        const uint32_t uid = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+        const uint16_t sid = (uint16_t)data[4] << 8 | data[5];
+        Serial.printf("Rocrail: %s UID %08lX SID %u\n", cmd == CAN_MFX_BIND ? "bind" : "verify",
+                      (unsigned long)uid, sid);
+        if (cmd == CAN_MFX_BIND)
+            Discovery::requestBind(uid, sid);
+        else
+            Discovery::requestVerify(uid, sid);
+        return;
+    }
+
     if (cmd < CAN_LOCO_SPEED || cmd > CAN_LOCO_FUNCT || length < 4)
     {
         traceUnknown();
@@ -447,6 +463,13 @@ static uint16_t cs2Hash(uint32_t uid)
  UID, 0x0C, identifier. Only the commands for this device or for all
  (UID 0) are answered.
 */
+bool Message::answer(uint8_t cmd, uint8_t len, const uint8_t *d)
+{
+    uint8_t frame[13];
+    putFrame(frame, ((uint32_t)cmd << 17) | 0x00010000UL | cs2Hash(Centrale::gUid()), len, d);
+    return sendToRocrail(frame, sizeof(frame));
+}
+
 static const uint16_t KENNUNG = 0x0001; // 0 and FFFF are not valid
 
 void Message::systemAnswer()
