@@ -12,6 +12,7 @@
 #include "MfxFrame.h"
 #include "MfxConfig.h"
 #include "Cs2Config.h"
+#include "LocoStore.h"
 
 static const uint32_t PERIOD_MS = 2000;        // search for new decoders
 static const uint32_t SAME_DECODER_MS = 30000; // pause if a decoder answers again
@@ -319,10 +320,10 @@ void Discovery::registerDecoder(uint32_t uid)
         Serial.printf("  Name read in the decoder: \"%s\"\n", decoderName);
     else
         Serial.println("  The name could not be read in the decoder");
-    Serial.println("  Declare it in Rocrail (mfx, this address). To keep it after a restart, add to main.cpp:");
-    Serial.printf("  loco[n] = Loco::createLoco(%u, \"%s\", 0x%02X, 0x%02X, 0x%02X, 0x%02X);\n\n",
-                  address, named ? decoderName : "name", (uint8_t)(uid >> 24), (uint8_t)(uid >> 16),
-                  (uint8_t)(uid >> 8), (uint8_t)uid);
+    // Remembered in the NVS: the decoder keeps this address while it hears
+    // the same command station and counter, so must the command station
+    LocoStore::save();
+    Serial.println("  Kept in memory (serial command L to list). Declare it in Rocrail (mfx, this address).\n");
 }
 
 /*
@@ -335,6 +336,10 @@ void Discovery::registerDecoder(uint32_t uid)
    V : existence query (ping, Krauss 3.2.5) of every declared locomotive,
        with the counts of the 1-bit feedback: does its decoder answer, and
        how strongly?
+   L : list of the locomotives (address, UID, name), with those in memory.
+   E : erase the locomotives in memory (LocoStore); the counter is raised
+       and the command station restarts, so that every decoder registers
+       again.
    ? : this help.
 */
 static void verifyAll()
@@ -378,9 +383,24 @@ static void console()
             else
                 Serial.println("Verify: the track is off");
         }
+        else if (c == 'L')
+            LocoStore::print();
+        else if (c == 'E')
+        {
+            // Forgotten by the command station: the decoders must forget it
+            // too, so the counter is raised (they register again)
+            LocoStore::erase();
+            const uint16_t next = Centrale::counter() + 1;
+            Centrale::setCounter(next);
+            Serial.printf("\nLocomotives erased from memory, counter %u, restart...\n", next);
+            Serial.flush();
+            vTaskDelay(pdMS_TO_TICKS(500));
+            ESP.restart();
+        }
         else if (c == '?')
             Serial.printf("\nCommands: R = re-registration of every decoder (counter %u -> %u, restart), "
-                          "V = verify every declared locomotive, ? = help\n",
+                          "V = verify every declared locomotive, L = list the locomotives, "
+                          "E = erase the locomotives in memory (counter + 1, restart), ? = help\n",
                           Centrale::counter(), Centrale::counter() + 1);
     }
 }

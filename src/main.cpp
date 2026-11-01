@@ -27,6 +27,7 @@
 #include "Discovery.h"
 #include "Feedback.h"
 #include "Loco.h"
+#include "LocoStore.h"
 #include "Message.h"
 #include "RxTask.h"
 #include "MfxRMT.h"
@@ -214,6 +215,10 @@ void setup()
 
   // Set up the Message system
   Message::setup(loco, MAX_LOCOS, nbLocos);
+  // The locomotives registered by the command station (NVS), after those
+  // declared above: a decoder keeps its address while it hears this
+  // command station, so the command station remembers it too
+  LocoStore::load();
   // Print each command received from Rocrail (speed, direction, functions).
   // Set to false once everything works: printing slows down the reception.
   Message::setTrace(true);
