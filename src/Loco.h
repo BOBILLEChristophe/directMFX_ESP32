@@ -7,6 +7,7 @@
 struct MfxInfo
 {
   bool valid;
+  bool complete;      // every read succeeded: no need to read it again
   uint8_t av, bv;     // acceleration, braking (x 0.25 s)
   uint8_t vmin, vmax;
   uint16_t tachoMax;  // km/h
@@ -61,6 +62,10 @@ public:
 
   // Renvoie nullptr si aucune loco n'a ce décodeur.
   static Loco *findByUid(uint32_t uid);
+
+  // Forgets the locomotive at this address (Message::removeLoco() first:
+  // the pointers to it become invalid). Returns false if there is none.
+  static bool removeLoco(uint8_t address);
 
   // Crée la loco, ou remplace celle qui a déjà cette adresse.
   static Loco *createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3);

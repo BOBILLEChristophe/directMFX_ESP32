@@ -95,6 +95,10 @@ public:
     // Returns false if the buffer is too small.
     bool toBuffer(uint8_t *buff, size_t buffSize) const;
 
+    // Is the frame in buff (format of toBuffer()) a bind command? The
+    // Gleisbox holds the track still for 1.6 ms after each bind.
+    static bool isBind(const uint8_t *buff);
+
     // CRC of the first nbits bits (Krauss: start value 0x7F, polynomial
     // x^8 + x^2 + x + 1, computed over the bits followed by 8 zero bits).
     static uint8_t crc(const MfxFrame &frame, uint8_t nbits);

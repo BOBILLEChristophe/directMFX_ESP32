@@ -6,9 +6,10 @@
 
    Every 2 s, while the track is powered, the command station asks
    "is there a decoder not yet registered?" (search with count 0). If one
-   answers, its 32-bit UID is read bit by bit: for each bit, the search asks
-   whether a decoder has the bits found so far followed by a 0. The UID found
-   is checked with a last search on the 32 bits.
+   answers, its 32-bit UID is read bit by bit, as the Gleisbox does: for each
+   bit, the search asks whether a decoder has the bits found so far followed
+   by a 1; without an answer the bit is 0, and that is asked again to be
+   sure. After an answer, the next question waits 150 ms.
 
    A new decoder gets the first free address, is added to the refresh and
    receives its address (Bind). The serial port prints its UID and the line

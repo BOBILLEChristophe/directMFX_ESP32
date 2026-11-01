@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- The command station frame (UID and counter) is sent every 50 ms (`STATION_PERIOD_MS`, 500 ms before), as the MS2 does (46 ms); the decoder search starts with the UID FFFFFFFF, as the MS2 sends it (the UID is not compared with a count of 0).
+- **Feedback request as a Marklin MS2 sends it** (recorded on the track of a Gleisbox with an MS2, with the new track sniffer): the question (search, verify, read CV), a synchronisation, the command station frame (111 101, UID and counter), then 2 synchronisations (11 before), the bits 0011 and windows of 6.0 ms (6.4 ms before). The recent ESU decoder of the 040 DE 9 answers the MS2 (search, verify, 80 reads of CVs) but never answered the former request. `MfxSignal::feedbackWindows()` and `dataWindow()` take the inserted frame; `MfxSignal::MAX_ITEMS` 434 (512 in the RMT memory). New unit test.
+
 ## 0.11.0 — 2026-10-28
 
 ### Added (feedback)

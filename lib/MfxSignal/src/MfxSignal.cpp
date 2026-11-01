@@ -4,6 +4,8 @@
 
 #include "MfxSignal.h"
 
+bool MfxSignal::windowLevel = true;
+
 void MfxSignal::push(bool level0, bool level1, uint16_t duration0, uint16_t duration1)
 {
     if (mCount >= MAX_ITEMS)
@@ -34,20 +36,40 @@ uint32_t MfxSignal::durationUs() const
     return us;
 }
 
-void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs)
+void MfxSignal::request(const uint8_t *insert)
 {
+    if (insert)
+    {
+        sync();
+        frame(insert);
+    }
     for (uint8_t i = 0; i < FEEDBACK_SYNCS; i++)
         sync();
     bit0();
     bit0();
     bit1();
     bit1();
+    forceLevel(windowLevel);
+}
+
+void MfxSignal::forceLevel(bool level)
+{
+    if (mLevel == level)
+        return;
+    push(mLevel, level, FORCE_US, FORCE_US);
+    mLevel = level;
+}
+
+void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs, const uint8_t *insert)
+{
+    request(insert);
 
     if (windowUs)
         *windowUs = durationUs();
     hold(FEEDBACK_WINDOW_US);
 
     sync();
+    forceLevel(!windowLevel);
 
     if (referenceUs)
         *referenceUs = durationUs();
@@ -55,18 +77,14 @@ void MfxSignal::feedbackWindows(uint32_t *windowUs, uint32_t *referenceUs)
 
     for (uint8_t i = 0; i < FEEDBACK_END_SYNCS; i++)
         sync();
+    hold(END_HOLD_US);
 }
 
-void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs)
+void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs, const uint8_t *insert)
 {
     if (bytes > DATA_MAX_BYTES)
         bytes = DATA_MAX_BYTES;
-    for (uint8_t i = 0; i < FEEDBACK_SYNCS; i++)
-        sync();
-    bit0();
-    bit0();
-    bit1();
-    bit1();
+    request(insert);
 
     if (pauseUs)
         *pauseUs = durationUs();
@@ -82,7 +100,9 @@ void MfxSignal::dataWindow(uint8_t bytes, uint32_t *pauseUs)
     push(l, l, HALF_US / 2, HALF_US / 2); // back to the pause level
     mLevel = l;
 
-    sync();
+    for (uint8_t i = 0; i < DATA_END_SYNCS; i++)
+        sync();
+    hold(END_HOLD_US);
 }
 
 void MfxSignal::bit0()

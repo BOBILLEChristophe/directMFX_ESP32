@@ -64,6 +64,26 @@ bool Message::addLoco(Loco *l)
     return added;
 }
 
+bool Message::removeLoco(uint8_t address)
+{
+    bool removed = false;
+    if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        for (byte i = 0; i < locoSize; i++)
+            if (loco[i] != nullptr && loco[i]->addr() == address)
+            {
+                for (byte j = i; j + 1 < locoSize; j++)
+                    loco[j] = loco[j + 1];
+                locoSize = locoSize - 1;
+                loco[locoSize] = nullptr; // a task may still read this slot
+                removed = true;
+                break;
+            }
+        xSemaphoreGive(taskSemaphore);
+    }
+    return removed;
+}
+
 /*
  Drive + functions F0..F15 of a locomotive (Krauss 3.1), in the format of
  mfxQueue. Used by the periodic refresh and by sendNow().
@@ -143,7 +163,8 @@ void Message::centrale(void *p)
             if (trace)
                 Serial.println("Centrale");
 
-            // Broadcast: command station UID and re-registration counter.
+            // Broadcast: command station UID and re-registration counter,
+            // every STATION_PERIOD_MS (a Marklin MS2 sends it every 46 ms).
             // The counter only changes on explicit request: a decoder that
             // sees it change registers again.
             MfxFrame frame;
@@ -154,7 +175,7 @@ void Message::centrale(void *p)
             xQueueSend(mfxQueue, &buff, 0);
             xSemaphoreGive(taskSemaphore);
         }
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
+        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(STATION_PERIOD_MS));
     }
 }
 
@@ -165,9 +186,29 @@ void Message::setSID(void *p)
     TickType_t xLastWakeTime;
     xLastWakeTime = xTaskGetTickCount();
 
+    /*
+     The binds are sent only for BIND_ROUNDS rounds after the track is
+     switched on, not every 500 ms for ever: a Gleisbox sends a bind only
+     while it registers a decoder, and an ESU decoder (040 DE 9) answered
+     only half of the questions while it heard about 9 binds a second
+     (October 2026). A decoder put on the track later, or that registered
+     elsewhere, answers the search: Discovery then sends its bind again.
+    */
+    static const uint8_t BIND_ROUNDS = 4;
+    uint8_t rounds = 0;
+    bool wasPowered = false;
+
     for (;;)
     {
-        if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
+        const bool powered = Centrale::power();
+        if (powered && !wasPowered)
+            rounds = 0; // the track has just been switched on
+        wasPowered = powered;
+        const bool send = powered && rounds < BIND_ROUNDS;
+        if (send)
+            rounds++;
+
+        if (send && xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
         {
             for (byte i = 0; i < locoSize; i++)
             {
@@ -188,7 +229,10 @@ void Message::setSID(void *p)
                     frame.bind(loco[i]->addr(), uid);
                     frame.finish();
                     frame.toBuffer(buff, sizeof(buff));
-                    xQueueSend(mfxQueue, &buff, 0);
+                    // Waits for room: the binds are now sent only a few times,
+                    // none may be lost in a full queue
+                    if (xQueueSend(mfxQueue, &buff, pdMS_TO_TICKS(200)) != pdPASS)
+                        Serial.printf("setSID: bind of address %u not sent (queue full)\n", loco[i]->addr());
                     vTaskDelay(pdMS_TO_TICKS(10));
                 }
             }

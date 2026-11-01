@@ -134,6 +134,12 @@ Loco *Loco::findLoco(uint8_t address)
   return it == locoMap.end() ? nullptr : &it->second;
 }
 
+bool Loco::removeLoco(uint8_t address)
+{
+  MapLock lock;
+  return locoMap.erase(address) > 0;
+}
+
 Loco *Loco::createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3)
 {
   Loco loco(address, name, uid0, uid1, uid2, uid3);

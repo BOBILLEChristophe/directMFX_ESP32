@@ -388,8 +388,9 @@ bool Feedback::readOnce(const uint8_t *frame, uint8_t bytes, uint8_t *out)
     }
     const uint16_t n = sEdgeCount;
     const MfxDemod::Status st = sDemod.decode(sEdges, n, (float)getCpuFrequencyMhz(), bytes, out);
-    // A missing decoder gives no carrier: nothing to tell
-    if (sTrace && st != MfxDemod::OK && st != MfxDemod::NO_CARRIER)
+    // Every read is traced, with the number of edges captured: tells a
+    // comparator that sees nothing from a demodulation problem
+    if (sTrace)
         Serial.printf("Feedback: read CV, %u edges, carrier %.2f us, %u runs -> %s\n  bits: %s\n", n,
                       sDemod.periodUs(), sDemod.runs(), MfxDemod::statusText(st), sDemod.bits());
     return st == MfxDemod::OK;
@@ -414,13 +415,14 @@ bool Feedback::readCV(uint16_t sid, uint16_t cv, uint8_t index, uint8_t bytes, u
      Krauss 4.9: answering heats the decoder (it draws about 140 mA during
      the whole answer). The first ESU decoders needed about 120 ms between
      two reads; newer Marklin decoders do not, but the pause is kept for
-     every decoder, as a precaution.
+     every decoder, as a precaution. The MS2 waits about 240 ms before each
+     read of an ESU decoder: so do we. 3 tries.
     */
     static TickType_t lastRead = 0;
     bool ok = false;
     xSemaphoreTake(sMutex, portMAX_DELAY);
     sReadSid = sid;
-    for (uint8_t i = 0; i < 2 && !ok; i++)
+    for (uint8_t i = 0; i < 3 && !ok; i++)
     {
         const TickType_t since = xTaskGetTickCount() - lastRead;
         if (lastRead != 0 && since < pdMS_TO_TICKS(READ_PAUSE_MS))

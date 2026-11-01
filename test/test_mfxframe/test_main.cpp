@@ -320,6 +320,47 @@ void test_buffer_too_small_and_overflow()
     TEST_ASSERT_EQUAL_UINT8(MfxFrame::MAX_BITS, big.size());
 }
 
+// isBind recognises a bind (broadcast as the station sends it, or to an
+// address of each length), and nothing else
+void test_is_bind()
+{
+    uint8_t b[MfxFrame::MAX_BITS + 1];
+    const uint16_t sids[4] = {0, 100, 300, 1500};
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        MfxFrame f;
+        if (sids[i] == 0)
+            f.broadcast();
+        else
+            f.address(sids[i]);
+        f.bind(4, 0xF9E610E0UL);
+        f.finish();
+        TEST_ASSERT_TRUE(f.toBuffer(b, sizeof(b)));
+        TEST_ASSERT_TRUE(MfxFrame::isBind(b));
+    }
+    MfxFrame s;
+    s.broadcast();
+    s.search(0, 0xFFFFFFFFUL);
+    s.finish();
+    s.toBuffer(b, sizeof(b));
+    TEST_ASSERT_FALSE(MfxFrame::isBind(b));
+    MfxFrame c;
+    c.broadcast();
+    c.centrale(0x476BB7DC, 30);
+    c.finish();
+    c.toBuffer(b, sizeof(b));
+    TEST_ASSERT_FALSE(MfxFrame::isBind(b));
+    MfxFrame v;
+    v.address(4);
+    v.verify(0xF9E610E0UL);
+    v.finish();
+    v.toBuffer(b, sizeof(b));
+    TEST_ASSERT_FALSE(MfxFrame::isBind(b));
+    b[0] = 3;
+    b[1] = 1; b[2] = 0; b[3] = 0;
+    TEST_ASSERT_FALSE(MfxFrame::isBind(b)); // too short
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -327,6 +368,7 @@ int main()
     RUN_TEST(test_periodic_frames_identical);
     RUN_TEST(test_centrale_frame_identical);
     RUN_TEST(test_bind_frame_identical);
+    RUN_TEST(test_is_bind);
     RUN_TEST(test_address_formats);
     RUN_TEST(test_search_frame);
     RUN_TEST(test_read_cv_frames_as_recorded);

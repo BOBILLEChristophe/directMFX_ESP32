@@ -67,7 +67,7 @@ public:
 
     // Pause between two reads of CVs (Krauss 4.9: about 120 ms for the
     // first ESU decoders), in ms
-    static const uint32_t READ_PAUSE_MS = 150;
+    static const uint32_t READ_PAUSE_MS = 250; // the MS2 waits about 240 ms between reads of an ESU decoder
 
     Feedback() = delete;
 

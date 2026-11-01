@@ -19,11 +19,20 @@
      time at which its chunk starts is handed to Feedback, which counts the
      decoder answer in the windows (1-bit feedback) or times the edges of
      the answer during the pause (data feedback, reading CVs).
+   - After a feedback request and after a bind, the line is held still for
+     1.6 ms, as the Gleisbox does (MfxSignal::END_HOLD_US). A bind is first
+     followed by two synchronisations, the second one merging with the hold:
+     the first one must stay complete, it ends the frame. The idle time
+     between two chunks then falls in that hold.
+   - As a Marklin MS2 does, the command station frame (UID and counter) is
+     inserted between the question and the feedback request (MfxSignal).
 
 */
 
 #include "MfxRMT.h"
 #include "Feedback.h"
+#include "Centrale.h"
+#include "MfxFrame.h"
 #include "esp_timer.h"
 #include "esp_rom_gpio.h" // esp_rom_gpio_pad_select_gpio, esp_rom_gpio_connect_out_signal
 
@@ -42,9 +51,10 @@ void RMTChannel::setup(gpio_num_t IN1_pin, gpio_num_t IN2_pin)
     config.tx_config.idle_output_en = true;
     config.tx_config.idle_level = RMT_IDLE_LEVEL_LOW;
     // The 8 blocks of 64 items (the whole RMT memory, no other channel is
-    // used): the longest chunk (MfxSignal::MAX_ITEMS = 395, a frame with a
-    // data feedback of 8 bytes) fits in the RMT memory, with room for the
-    // end marker: no refill by interrupt during the transmission.
+    // used): the longest chunk (MfxSignal::MAX_ITEMS = 434, a frame with
+    // the command station frame and a data feedback of 8 bytes) fits in the
+    // RMT memory (512 items), with room for the end marker: no refill by
+    // interrupt during the transmission.
     config.mem_block_num = 8;
 
     // Signal inversé : IN2 reçoit la sortie du RMT, inversée par la matrice GPIO.
@@ -118,12 +128,21 @@ void RMTChannel::signalTask(void *parameter)
         // decoder search, the locomotives keep their refresh
         if (!lastWasFeedback && Feedback::takeRequest(frame, sizeof(frame), &dataBytes))
         {
+            // The command station frame, sent between the question and the
+            // request, as the MS2 does (some decoders answer only then)
+            MfxFrame station;
+            station.broadcast();
+            station.centrale(Centrale::gUid(), Centrale::counter());
+            station.finish();
+            uint8_t stationBuff[BUFFER_SIZE];
+            const uint8_t *insert = station.toBuffer(stationBuff, sizeof(stationBuff)) ? stationBuff : nullptr;
+
             signal.sync();
             signal.frame(frame);
             if (dataBytes)
-                signal.dataWindow(dataBytes, &pauseUs); // read CV: pause with clock pulses
+                signal.dataWindow(dataBytes, &pauseUs, insert); // read CV: pause with clock pulses
             else
-                signal.feedbackWindows(&windowUs, &referenceUs); // 1 bit: two windows
+                signal.feedbackWindows(&windowUs, &referenceUs, insert); // 1 bit: two windows
             feedback = true;
         }
         else if (xQueueReceive(mfxQueue, frame, 0) == pdPASS)
@@ -132,6 +151,15 @@ void RMTChannel::signalTask(void *parameter)
             signal.sync();
             signal.frame(frame);
             signal.sync();
+            if (MfxFrame::isBind(frame))
+            {
+                // As the Gleisbox: a second synchronisation, whose last
+                // 100 µs half-bit merges with the hold. Holding right after
+                // the first one swallowed its last edge: the bind was never
+                // ended for the decoders (nor for the sniffer)
+                signal.sync();
+                signal.hold(MfxSignal::END_HOLD_US);
+            }
         }
         else
         {
