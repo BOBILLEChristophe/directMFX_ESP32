@@ -291,7 +291,17 @@ void Message::parse()
         if (length < 5)
             return;
         if (traceCommands)
-            Serial.printf("cmd systeme, sous-commande %u\n", data[4]);
+        {
+            // Every byte, to compare with the MS2 captures (sub-command 0x20 =
+            // system time, sent every minute by Rocrail, is left out)
+            if (data[4] != 0x20)
+            {
+                Serial.printf("Rocrail: system 0x%02X (%u bytes:", data[4], length);
+                for (byte i = 0; i < length; i++)
+                    Serial.printf(" %02X", data[i]);
+                Serial.println(")");
+            }
+        }
         switch (data[4]) // sous-commande
         {
         case 0x00: // Arrêt du système
@@ -387,14 +397,15 @@ void Message::parse()
 */
 void Message::traceUnknown()
 {
-    static uint8_t seen[32] = {0};
-    if (!traceCommands || (seen[cmd >> 3] & (1 << (cmd & 7))))
+    // The first 5 of each command (Rocrail as master: discovery, bind...)
+    static uint8_t seen[256] = {0};
+    if (!traceCommands || seen[cmd] >= 5)
         return;
-    seen[cmd >> 3] |= 1 << (cmd & 7);
+    seen[cmd]++;
     Serial.printf("Rocrail: command 0x%02X not handled (%u bytes:", cmd, length);
     for (byte i = 0; i < length; i++)
         Serial.printf(" %02X", data[i]);
-    Serial.println("), printed once");
+    Serial.printf(")%s\n", seen[cmd] == 5 ? ", printed 5 times" : "");
 }
 
 // One 13-byte CS2 frame: id (big endian), length, 8 data bytes
@@ -432,13 +443,13 @@ void Message::pingAnswer()
     static bool told = false;
     const uint32_t uid = Centrale::gUid();
     const uint8_t d[8] = {(uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8), (uint8_t)uid,
-                          3, 8, 0xFF, 0xFF};
+                          1, 0x2F, 0x00, 0x11}; // as a Gleisbox: version 1.47, type 0x0011 (recorded)
     uint8_t frame[13];
     putFrame(frame, ((uint32_t)CAN_PING << 17) | 0x00010000UL | cs2Hash(uid), 8, d);
     const bool ok = sendToRocrail(frame, sizeof(frame));
     if (!told)
     {
-        Serial.printf("Rocrail: ping answered as a CS2 (UID %08lX)%s\n", (unsigned long)uid, ok ? "" : ", not sent");
+        Serial.printf("Rocrail: ping answered as a Gleisbox (UID %08lX, version 1.47, type 0011)%s\n", (unsigned long)uid, ok ? "" : ", not sent");
         told = true;
     }
 }
