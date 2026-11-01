@@ -64,6 +64,26 @@ bool Message::addLoco(Loco *l)
     return added;
 }
 
+bool Message::removeLoco(uint8_t address)
+{
+    bool removed = false;
+    if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
+    {
+        for (byte i = 0; i < locoSize; i++)
+            if (loco[i] != nullptr && loco[i]->addr() == address)
+            {
+                for (byte j = i; j + 1 < locoSize; j++)
+                    loco[j] = loco[j + 1];
+                locoSize = locoSize - 1;
+                loco[locoSize] = nullptr; // a task may still read this slot
+                removed = true;
+                break;
+            }
+        xSemaphoreGive(taskSemaphore);
+    }
+    return removed;
+}
+
 /*
  Drive + functions F0..F15 of a locomotive (Krauss 3.1), in the format of
  mfxQueue. Used by the periodic refresh and by sendNow().

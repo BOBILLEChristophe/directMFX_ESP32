@@ -59,6 +59,9 @@ public:
     // Adds a locomotive to the refresh (drive frames and Bind).
     // Returns false if the array is full.
     static bool addLoco(Loco *l);
+    // Removes the locomotive at this address from the refresh. Returns false
+    // if it was not there.
+    static bool removeLoco(uint8_t address);
     // Prints each command received from Rocrail (speed, direction, functions)
     static void setTrace(bool on) { traceCommands = on; }
     static void decodeMsg(byte *);

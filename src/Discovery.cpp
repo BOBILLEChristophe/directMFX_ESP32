@@ -411,6 +411,50 @@ static void verifyAll()
     }
 }
 
+// Presence of each locomotive (verifyNext())
+static bool sAbsent[128];
+static uint8_t sMisses[128];
+static TickType_t sAbsentSince[128];
+
+/*
+ Deletes a locomotive, as the MS2 does (1 Nov, Gleisbox capture: "addr 11 |
+ verify UID 00000000", twice): an existence query at its address with the
+ UID 0 makes its decoder forget its address at once (Krauss 4.3). The
+ command station forgets it too. A decoder on the track then answers the
+ search again and is registered as a new locomotive (address, configuration,
+ name), exactly as on an MS2.
+*/
+static void deleteLoco(uint8_t a)
+{
+    Loco *l = Loco::findLoco(a);
+    if (l == nullptr)
+    {
+        Serial.printf("\nDelete: no locomotive at address %u (serial command L to list)\n", a);
+        return;
+    }
+    const String name = l->name();
+    const uint32_t uid = l->uid32();
+    if (Centrale::power())
+        for (uint8_t i = 0; i < 2; i++)
+        {
+            MfxFrame f;
+            f.address(a);
+            f.verify(0);
+            f.finish();
+            Feedback::ask(f);
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+    Message::removeLoco(a);
+    Loco::removeLoco(a);
+    sAbsent[a] = false;
+    sMisses[a] = 0;
+    sReadTries[a] = 0;
+    LocoStore::save();
+    Serial.printf("\nDeleted: %s (UID %08lX) at address %u%s. Delete it in Rocrail too.\n", name.c_str(),
+                  (unsigned long)uid, a,
+                  Centrale::power() ? "" : " (track off: its decoder keeps the address until the counter changes)");
+}
+
 static void console()
 {
     while (Serial.available() > 0)
@@ -462,10 +506,26 @@ static void console()
             vTaskDelay(pdMS_TO_TICKS(500));
             ESP.restart();
         }
+        else if (c == 'D')
+        {
+            // D followed by the address, D4 for example
+            vTaskDelay(pdMS_TO_TICKS(50)); // the rest of the line
+            uint16_t a = 0;
+            bool digits = false;
+            while (Serial.available() > 0 && isdigit(Serial.peek()))
+            {
+                a = a * 10 + (Serial.read() - '0');
+                digits = true;
+            }
+            if (!digits || a < 1 || a > 127)
+                Serial.println("\nDelete: D followed by the address (1 to 127), D4 for example");
+            else
+                deleteLoco((uint8_t)a);
+        }
         else if (c == '?')
             Serial.printf("\nCommands: R = re-registration of every decoder (counter %u -> %u, restart), "
                           "V = verify every declared locomotive, L = list the locomotives, C = read the configurations again, "
-                          "E = erase the locomotives in memory (counter + 1, restart), ? = help\n",
+                          "D<address> = delete one locomotive (D4), E = erase the locomotives in memory (counter + 1, restart), ? = help\n",
                           Centrale::counter(), Centrale::counter() + 1);
     }
 }
@@ -488,9 +548,6 @@ static void console()
 static const uint32_t ABSENT_RETRY_MS = 60000;
 static const uint8_t ABSENT_MISSES = 3;
 static const uint16_t WEAK_ANSWER_REGULAR = 20;
-static bool sAbsent[128];
-static uint8_t sMisses[128];
-static TickType_t sAbsentSince[128];
 
 static void verifyNext()
 {

@@ -63,6 +63,10 @@ public:
   // Renvoie nullptr si aucune loco n'a ce décodeur.
   static Loco *findByUid(uint32_t uid);
 
+  // Forgets the locomotive at this address (Message::removeLoco() first:
+  // the pointers to it become invalid). Returns false if there is none.
+  static bool removeLoco(uint8_t address);
+
   // Crée la loco, ou remplace celle qui a déjà cette adresse.
   static Loco *createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3);
 };
