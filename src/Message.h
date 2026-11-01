@@ -28,6 +28,7 @@ const byte BUFF_MSG_SIZE = 100;
 // A Marklin MS2 with its Gleisbox sends it every 46 ms (recorded on the
 // track); it was 500 ms before.
 #define STATION_PERIOD_MS 50
+#define CAN_STATUS_DATA 0x1D        // description of a device (Statusdaten Konfiguration)
 #define CAN_PING 0x18               // who is on the bus? (answered as a CS2)
 #define CAN_CONFIG_DATA 0x20        // request of a configuration file ("loks"...)
 #define CAN_CONFIG_DATA_STREAM 0x21 // the file
@@ -80,6 +81,10 @@ public:
 private:
     static void configRequest();
     static void pingAnswer();
+    // As a Gleisbox: answers a system command (echo, or the identifier)
+    static void systemAnswer();
+    // As a Gleisbox: the description of the device (command 0x1D, index 0)
+    static void statusDataAnswer();
     static void sendLocoList();
     static void traceUnknown();
 };

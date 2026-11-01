@@ -315,6 +315,13 @@ void Message::parse()
         case 0x03: // Arrêt d'urgence de la locomotive : à implémenter (étape 3)
             break;
         }
+        systemAnswer();
+        return;
+    }
+
+    if (cmd == CAN_STATUS_DATA)
+    {
+        statusDataAnswer();
         return;
     }
 
@@ -430,6 +437,87 @@ static uint16_t cs2Hash(uint32_t uid)
 {
     uint16_t h = (uint16_t)((uid >> 16) ^ (uid & 0xFFFF));
     return (uint16_t)(((h << 3) & 0xFC00) | 0x0300 | (h & 0x007F));
+}
+
+/*
+ Answers of a Gleisbox to the system commands (recorded on the CAN bus of an
+ MS2 and a Gleisbox, 31 Oct): the same bytes with the response bit, for STOP,
+ GO, track protocols (0x08), re-registration counter (0x09)... The identifier
+ (0x0C, "Kennung", asked by Rocrail as master) is answered with 7 bytes:
+ UID, 0x0C, identifier. Only the commands for this device or for all
+ (UID 0) are answered.
+*/
+static const uint16_t KENNUNG = 0x0001; // 0 and FFFF are not valid
+
+void Message::systemAnswer()
+{
+    const uint32_t own = Centrale::gUid();
+    const uint32_t to = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+    if (to != 0 && to != own)
+        return;
+    uint8_t d[8];
+    memcpy(d, data, 8);
+    uint8_t len = length;
+    switch (data[4])
+    {
+    case 0x00: // STOP
+    case 0x01: // GO
+    case 0x02: // halt
+    case 0x08: // track protocols
+    case 0x09: // re-registration counter
+        break;
+    case 0x0C: // identifier: asked (5 bytes) -> answered with it (7 bytes)
+        d[5] = KENNUNG >> 8;
+        d[6] = KENNUNG & 0xFF;
+        len = 7;
+        break;
+    default:
+        return; // not answered (yet)
+    }
+    uint8_t frame[13];
+    putFrame(frame, ((uint32_t)CAN_SYSTEM_CONTROL << 17) | 0x00010000UL | cs2Hash(own), len, d);
+    sendToRocrail(frame, sizeof(frame));
+}
+
+/*
+ Command 0x1D (Statusdaten Konfiguration), index 0: the description of the
+ device, sent in packets of 8 bytes (the hash field of each one is its
+ number, from 1), then a frame of 6 bytes: UID, index, number of packets
+ (CS2 CAN protocol 2.0, 6.2). Content: number of measurement channels,
+ number of configuration channels, 2 free bytes, serial number (4 bytes),
+ article number (8 characters), name (ended by 0). No channel: Rocrail
+ asks no more.
+*/
+void Message::statusDataAnswer()
+{
+    const uint32_t own = Centrale::gUid();
+    const uint32_t to = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+    if (length < 5 || to != own)
+        return;
+    const uint8_t index = data[4];
+    if (index != 0)
+        return; // no channel
+    uint8_t desc[32];
+    memset(desc, 0, sizeof(desc));
+    desc[0] = 0; // measurement channels
+    desc[1] = 0; // configuration channels
+    desc[4] = (uint8_t)(own >> 24);
+    desc[5] = (uint8_t)(own >> 16);
+    desc[6] = (uint8_t)(own >> 8);
+    desc[7] = (uint8_t)own;
+    memcpy(desc + 8, "60116\0\0\0", 8);
+    const char *name = "MFX Station"; // 16 bytes at most, with the final 0
+    strncpy((char *)desc + 16, name, 15);
+    const uint8_t packets = 4; // 32 bytes
+    uint8_t frames[13 * 5];
+    for (uint8_t p = 0; p < packets; p++)
+        putFrame(frames + 13 * p, ((uint32_t)CAN_STATUS_DATA << 17) | 0x00010000UL | (uint16_t)(p + 1), 8,
+                 desc + 8 * p);
+    const uint8_t end[6] = {(uint8_t)(own >> 24), (uint8_t)(own >> 16), (uint8_t)(own >> 8), (uint8_t)own, index,
+                            packets};
+    putFrame(frames + 13 * packets, ((uint32_t)CAN_STATUS_DATA << 17) | 0x00010000UL | cs2Hash(own), 6, end);
+    const bool ok = sendToRocrail(frames, sizeof(frames));
+    Serial.printf("Rocrail: device description sent (index 0, %u packets)%s\n", packets, ok ? "" : ", not sent");
 }
 
 /*
