@@ -487,6 +487,7 @@ static void console()
 */
 static const uint32_t ABSENT_RETRY_MS = 60000;
 static const uint8_t ABSENT_MISSES = 3;
+static const uint16_t WEAK_ANSWER_REGULAR = 20;
 static bool sAbsent[128];
 static uint8_t sMisses[128];
 static TickType_t sAbsentSince[128];
@@ -508,7 +509,11 @@ static void verifyNext()
         f.address(a);
         f.verify(l->uid32());
         f.finish();
-        const bool yes = Feedback::ask(f);
+        Feedback::Result r;
+        // Presence only: a weak answer counts too (the 241 A answers some
+        // queries with 64 or 105 edges instead of 300, 1 Nov; the noise
+        // gives at most 5 regular intervals)
+        const bool yes = Feedback::ask(f, &r) || r.windowRegular >= WEAK_ANSWER_REGULAR;
         if (yes)
         {
             if (sAbsent[a])
