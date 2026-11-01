@@ -178,7 +178,6 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
         // completely, the announce made the locomotives stop answering speed
         // and function commands (October 2026, found by testing the commits
         // one by one). To be looked at with a capture of what Rocrail does.
-        // Message::announceBind(l->uid32(), sid);
     }
     if (nameOut && size)
     {
@@ -238,7 +237,6 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
 static const uint8_t READ_TRIES = 3;
 static std::unordered_map<uint16_t, uint8_t> sReadTries; // tries per address, READ_TRIES once read
 static volatile bool sRereadConfigs = false; // serial command C
-static volatile bool sConfigPending = false; // a new decoder not read completely
 
 bool Discovery::readDeclaredConfigs()
 {
@@ -333,70 +331,6 @@ static void sendBind(Loco *l, bool verify = true)
         vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
 }
 
-void Discovery::registerDecoder(uint32_t uid)
-{
-    Loco *l = Loco::findByUid(uid);
-    if (l != nullptr)
-    {
-        // Declared in main.cpp but not registered (registered on another
-        // command station, or a new counter): give it its address again
-        Serial.printf("Discovery: decoder %08lX is %s (address %u), address sent again\n",
-                      (unsigned long)uid, l->name().c_str(), l->addr());
-        sendBind(l);
-        return;
-    }
-
-    uint16_t address = 0;
-    for (uint16_t a = 1; a < 128; a++)
-        if (Loco::findLoco(a) == nullptr)
-        {
-            address = a;
-            break;
-        }
-    if (address == 0)
-    {
-        Serial.println("Discovery: no free address");
-        return;
-    }
-
-    char name[16];
-    snprintf(name, sizeof(name), "mfx %08lX", (unsigned long)uid);
-    l = Loco::createLoco(address, name, uid >> 24, uid >> 16, uid >> 8, uid);
-    if (!Message::addLoco(l))
-    {
-        Serial.println("Discovery: too many locomotives, see MAX_LOCOS in main.cpp");
-        return;
-    }
-    sendBind(l);
-
-    // The name stored in the decoder, once it has its address
-    vTaskDelay(pdMS_TO_TICKS(300));
-    char decoderName[17] = "name";
-    const bool named = readConfig(address, decoderName, sizeof(decoderName)) && decoderName[0];
-    if (named)
-        l->name(decoderName); // the name stored in the decoder, for Rocrail
-    if (l->mfxInfo().complete)
-        sReadTries[address] = READ_TRIES; // already read: not read again
-    else
-    {
-        // Read again later, as a declared locomotive (1 Nov: the 241 A,
-        // registered again after D4, gave half answers and kept the name
-        // "mfx 73E92A0F")
-        sReadTries[address] = 1;
-        sConfigPending = true;
-    }
-
-    Serial.printf("\nDiscovery: new decoder, UID %02X %02X %02X %02X -> address %u\n",
-                  (uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8), (uint8_t)uid, address);
-    if (named)
-        Serial.printf("  Name read in the decoder: \"%s\"\n", decoderName);
-    else
-        Serial.println("  The name could not be read in the decoder");
-    // Remembered in the NVS: the decoder keeps this address while it hears
-    // the same command station and counter, so must the command station
-    LocoStore::save();
-    Serial.println("  Kept in memory (serial command L to list). Declare it in Rocrail (mfx, this address).\n");
-}
 
 /*
  Commands typed in the serial monitor (one letter, then Enter):
@@ -835,7 +769,6 @@ void Discovery::task(void *)
             configsDone = false;
             lastConfigs = 0;
         }
-        sConfigPending = false; // the master reads the configurations
 
         // The configurations are read once the track has been on for
         // POWERED_MS without a break (the decoders must have started),

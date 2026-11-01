@@ -74,12 +74,7 @@ public:
     static void driveFrame(Loco *l, byte *out, size_t outSize);
     static void sendNow(Loco *l);
     static void centrale(void *);
-    static void setSID(void *);
 
-    // Tells Rocrail that the decoder uid has the rail address sid, as an
-    // MS2 does on the CAN bus when it registers a locomotive (command 0x02,
-    // UID and SID), followed by the answer of the track box.
-    static void announceBind(uint32_t uid, uint16_t sid);
 
     // Sends to Rocrail an answer of this device (response bit set, hash of
     // its UID): command cmd, len bytes of d.

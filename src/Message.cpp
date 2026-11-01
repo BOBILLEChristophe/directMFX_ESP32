@@ -41,7 +41,6 @@ void Message::setup(Loco *locoArray[], byte capacity, byte count)
 
     xTaskCreatePinnedToCore(periodic, "Periodic", 2 * 1024, (void *)loco, 6, NULL, 0);
     xTaskCreatePinnedToCore(centrale, "Centrale", 2 * 1024, (void *)loco, 5, NULL, 0);
-    xTaskCreatePinnedToCore(setSID, "SetSID", 2 * 1024, (void *)loco, 5, NULL, 0);
 }
 
 /*
@@ -180,68 +179,6 @@ void Message::centrale(void *p)
     }
 }
 
-void Message::setSID(void *p)
-{
-    Loco **loco;
-    loco = (Loco **)p;
-    TickType_t xLastWakeTime;
-    xLastWakeTime = xTaskGetTickCount();
-
-    /*
-     The binds are sent only for BIND_ROUNDS rounds after the track is
-     switched on, not every 500 ms for ever: a Gleisbox sends a bind only
-     while it registers a decoder, and an ESU decoder (040 DE 9) answered
-     only half of the questions while it heard about 9 binds a second
-     (October 2026). A decoder put on the track later, or that registered
-     elsewhere, answers the search: Discovery then sends its bind again.
-    */
-    static const uint8_t BIND_ROUNDS = 4;
-    uint8_t rounds = 0;
-    bool wasPowered = false;
-
-    for (;;)
-    {
-        const bool powered = Centrale::power();
-        if (powered && !wasPowered)
-            rounds = 0; // the track has just been switched on
-        wasPowered = powered;
-        const bool send = powered && rounds < BIND_ROUNDS;
-        if (send)
-            rounds++;
-
-        if (send && xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
-        {
-            for (byte i = 0; i < locoSize; i++)
-            {
-                if (loco[i] != nullptr && loco[i]->uid32() != 0) // UID unknown: no bind
-                {
-
-                    if (trace)
-                        Serial.printf("setSID- %s\n", loco[i]->name().c_str());
-
-                    /*
-                    Cette commande est envoyée à l'adresse de diffusion 0, puisque le décodeur ne connaît pas encore le SID.
-                    Le décodeur passe ainsi en mode de fonctionnement avec l'UID correspondant et peut ensuite être adressé sous ce SID.
-                    */
-                    const uint32_t uid = (uint32_t)loco[i]->UID(0) << 24 | (uint32_t)loco[i]->UID(1) << 16 |
-                                         (uint32_t)loco[i]->UID(2) << 8 | loco[i]->UID(3);
-                    MfxFrame frame;
-                    frame.broadcast();
-                    frame.bind(loco[i]->addr(), uid);
-                    frame.finish();
-                    frame.toBuffer(buff, sizeof(buff));
-                    // Waits for room: the binds are now sent only a few times,
-                    // none may be lost in a full queue
-                    if (xQueueSend(mfxQueue, &buff, pdMS_TO_TICKS(200)) != pdPASS)
-                        Serial.printf("setSID: bind of address %u not sent (queue full)\n", loco[i]->addr());
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                }
-            }
-            xSemaphoreGive(taskSemaphore);
-        }
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-    }
-}
 
 void Message::decodeMsg(byte *rxBuffer)
 {
@@ -314,6 +251,17 @@ void Message::parse()
         case 0x02: // System Halt : à implémenter (étape 3)
             break;
         case 0x03: // Arrêt d'urgence de la locomotive : à implémenter (étape 3)
+            break;
+        case 0x09: // re-registration counter, set by the master (MS2: at power on)
+            if (length >= 7)
+            {
+                const uint16_t counter = (uint16_t)data[5] << 8 | data[6];
+                if (counter != Centrale::counter())
+                {
+                    Centrale::setCounter(counter);
+                    Serial.printf("Rocrail: re-registration counter %u (from the master)\n", counter);
+                }
+            }
             break;
         }
         systemAnswer();
@@ -596,19 +544,6 @@ void Message::pingAnswer()
     }
 }
 
-void Message::announceBind(uint32_t uid, uint16_t sid)
-{
-    const uint32_t own = Centrale::gUid();
-    const uint8_t d[6] = {(uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8), (uint8_t)uid,
-                          (uint8_t)(sid >> 8), (uint8_t)sid};
-    uint8_t frames[26];
-    const uint32_t bindId = ((uint32_t)CAN_MFX_BIND << 17) | cs2Hash(own);
-    putFrame(frames, bindId, 6, d);                       // the order (as from an MS2)
-    putFrame(frames + 13, bindId | 0x00010000UL, 6, d);   // the answer (as from the track box)
-    const bool ok = sendToRocrail(frames, sizeof(frames));
-    Serial.printf("Rocrail: bind announced, UID %08lX -> address %u%s\n", (unsigned long)uid, sid,
-                  ok ? "" : " (not connected)");
-}
 
 /*
  Command 0x20: Rocrail asks for a configuration file, by its name in the 8

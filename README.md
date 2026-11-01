@@ -14,16 +14,17 @@ Ce projet fait l'objet d'un fil sur le forum 3R : https://forum.3rails.fr/t/cont
 
 - **Signal mfx** généré par le RMT de l'ESP32 : vitesse (127 crans), direction et fonctions F0 à F15.
 - **Pilotage depuis Rocrail** en WiFi, avec le protocole de la CS2 (port TCP 15731). Rocrail peut se déconnecter et se reconnecter sans redémarrer la centrale.
-- **Inscription automatique des locomotives, comme avec une MS2 et une Gleisbox** : posez une locomotive mfx sur la voie, la centrale la trouve, lui donne une adresse libre, lit sa configuration (nom, fabricant, symboles des fonctions, accélération, freinage, vitesses mini et maxi) et la **garde en mémoire** (NVS de l'ESP32) avec sa configuration. Au démarrage suivant, rien n'est relu. Plus besoin de rien écrire dans `src/main.cpp`.
+- **La centrale se comporte comme une Gleisbox Märklin**, et Rocrail (option **Master** du pilote MBUS) comme la MS2 : posez une locomotive mfx sur la voie, la centrale la trouve et la signale à Rocrail, qui lui donne une adresse, lit son nom et **crée la locomotive dans sa liste**. Rien à déclarer, ni dans `src/main.cpp`, ni à la main dans Rocrail (pensez seulement à enregistrer le plan). Essayé avec quatre locomotives (deux décodeurs ESU, deux Märklin).
 - **Plusieurs locomotives** (16 au plus pilotées en même temps).
 - **Présence des locomotives** : chacune est interrogée à tour de rôle, comme le fait la MS2, ce qui garde son inscription ; le moniteur série signale une locomotive qui quitte la voie ou qui y revient.
-- **Suppression d'une locomotive**, comme sur la MS2 (commande `D` du moniteur série).
+- **Suppression d'une locomotive**, comme sur la MS2 (ordre du maître, ou commande `D` du moniteur série).
 - **Protection contre les courts-circuits** : la voie est coupée au-delà du seuil (1 A par défaut) et ne repart que sur un Go de Rocrail.
 - **FreeRTOS** : chaque fonction (signal, réception, surveillance du courant) tourne dans sa propre tâche.
 
 ### Ce qui reste à faire
 
-- Création automatique des locomotives découvertes dans Rocrail : la centrale sait répondre comme une CS2 à la demande « loks », mais le pilote `mbus` de Rocrail ne la lui adresse pas encore. En attendant, la locomotive découverte se déclare à la main dans Rocrail (protocole mfx, adresse affichée par la centrale). Suppression depuis Rocrail et bouton « Bind » de Rocrail.
+- Fonctions des locomotives dans Rocrail : Rocrail lit les CV 25 à 70, qui ne correspondent pas à l'organisation mfx des décodeurs ; voir ce que fait la MS2.
+- Bruit des moteurs avec le comparateur à 1 MΩ : à vérifier pendant une lecture.
 - La 040 DE (décodeur ESU récent) ne répond qu'une fois sur deux environ aux questions de la centrale, alors qu'elle répond à la Gleisbox : chantier en cours, au renifleur.
 - Écriture des CV.
 - Fonctions F16 et au-delà, arrêt d'urgence, réponses à Rocrail (état, surcharge).
@@ -44,14 +45,15 @@ Voir sur YouTube : https://youtu.be/kIXx-TSOVpQ?si=jwideeNshVRPlX4l
 
 ### Retour d'information
 
-Un capteur sur un fil de voie permet aux décodeurs de répondre à la centrale. Il sert à l'**inscription automatique**, reproduite d'après des relevés d'une MS2 et d'une Gleisbox Märklin au renifleur :
+Un capteur sur un fil de voie permet aux décodeurs de répondre à la centrale. Il sert à l'**inscription des décodeurs**, reproduite d'après des relevés d'une MS2 et d'une Gleisbox Märklin au renifleur (voie et bus CAN). Comme dans le couple MS2 + Gleisbox, les rôles sont partagés : **la centrale fait le travail de la Gleisbox, et Rocrail celui de la MS2** (le maître, qui choisit les adresses et tient la liste des locomotives).
 
-- **Recherche** : toutes les 2 s, la centrale cherche les décodeurs mfx qui ne sont pas encore inscrits et lit leur UID bit par bit, comme la Gleisbox (chaque bit est d'abord demandé à 1, puis à 0 sans réponse ; 150 ms de pause après une réponse).
-- **Attribution de l'adresse** (« bind ») : envoyée 4 fois à 43 ms d'intervalle, chacune suivie de deux synchronisations et d'un maintien de la voie de 1,6 ms, comme la Gleisbox ; puis une interrogation à la nouvelle adresse confirme que le décodeur l'a prise.
-- **Lecture de la configuration** du décodeur, puis **mise en mémoire** de la locomotive (adresse, UID, nom, configuration).
-- **Interrogation** de chaque locomotive à tour de rôle, entre deux recherches, comme la MS2 : un décodeur qui n'est plus interrogé pendant 5 à 10 minutes se réinscrit (Krauss, § 4.3). Une locomotive qui ne répond pas 3 fois de suite est considérée hors de la voie et n'est plus interrogée qu'une fois par minute.
+- **Recherche**, par la centrale : toutes les 2 s, elle cherche les décodeurs mfx qui ne sont pas encore inscrits et lit leur UID bit par bit, comme la Gleisbox (chaque bit est d'abord demandé à 1, puis à 0 sans réponse ; 150 ms de pause après une réponse). L'UID trouvé est **signalé au maître** (commande CAN 0x01, réponse).
+- **Attribution de l'adresse** (« bind »), sur ordre du maître (0x02) : envoyée 4 fois à 43 ms d'intervalle, chacune suivie de deux synchronisations et d'un maintien de la voie de 1,6 ms, comme la Gleisbox. Rocrail choisit l'adresse (les 12 bits de poids faible de l'UID : 404 pour l'UID FFE9B194) ; les adresses vont de 1 à 16383.
+- **Interrogation** (0x03) et **lecture de CV** (0x07) sur ordre du maître : Rocrail lit ainsi le nom du décodeur, puis crée la locomotive. Une interrogation avec l'UID 0 fait oublier son adresse au décodeur (suppression, comme la MS2).
+- **Présence** : la centrale interroge aussi chaque locomotive connue à tour de rôle, entre deux recherches : un décodeur qui n'est plus interrogé pendant 5 à 10 minutes se réinscrit (Krauss, § 4.3). Une locomotive qui ne répond pas 3 fois de suite est considérée hors de la voie et n'est plus interrogée qu'une fois par minute.
+- **Ordres de conduite** : comme une Gleisbox, la centrale transmet sur la voie les ordres du maître pour toute adresse mfx, même celle d'une locomotive inscrite lors d'une autre séance.
 
-Le moniteur série affiche l'UID, l'adresse donnée et le nom lu dans le décodeur. Il reste à déclarer la locomotive dans Rocrail (protocole mfx, cette adresse).
+Face à Rocrail, la centrale se présente comme une Gleisbox : réponse au ping (version 1.47, type 0011, comme la Gleisbox relevée), description de l'appareil (commande 0x1D), identifiant (0x0C), accusé des commandes système (Go, Stop, protocoles de voie, compteur de réinscription).
 
 Le capteur (schéma ci-dessous) :
 
@@ -90,11 +92,11 @@ Réponse de la Serie 150X à une lecture de CV, vue à l'oscilloscope (Rigol DS1
 
 **Commandes du moniteur série** (une lettre, puis Entrée) :
 
-- `L` : liste des locomotives en mémoire (adresse, UID, nom, configuration lue ou non).
-- `D` suivi de l'adresse (par exemple `D4`) : suppression d'une locomotive, comme la MS2. La centrale envoie à cette adresse une interrogation avec l'UID 0, qui fait oublier son adresse au décodeur, puis l'oublie à son tour. Si la locomotive est sur la voie, elle se réinscrit aussitôt comme une nouvelle locomotive. Supprimez-la aussi dans Rocrail.
+- `L` : liste des locomotives connues de la centrale (adresse, UID, nom).
+- `D` suivi de l'adresse (par exemple `D404`) : la centrale envoie à cette adresse une interrogation avec l'UID 0, qui fait oublier son adresse au décodeur (même si la centrale ne la connaît pas), puis l'oublie à son tour. **Voie sous tension** : sinon le décodeur garde son adresse. Si la locomotive est sur la voie, elle se réinscrit aussitôt et Rocrail l'inscrit de nouveau.
 - `C` : relecture de la configuration de toutes les locomotives.
 - `E` : effacement de toutes les locomotives en mémoire ; le compteur de réinscription est augmenté et la centrale redémarre.
-- `R` : réinscription de tous les décodeurs. Le compteur de réinscription est augmenté (et gardé en mémoire), puis la centrale redémarre ; faites ensuite le Go dans Rocrail.
+- `R` : réinscription de tous les décodeurs. Le compteur de réinscription est augmenté (et gardé en mémoire), puis la centrale redémarre ; faites ensuite le Go dans Rocrail. Seules les locomotives **posées sur la voie** à ce moment se réinscrivent, une par une (environ 45 s chacune avec la lecture de Rocrail). Un compteur envoyé par le maître (commande système 0x09, comme la MS2) est aussi pris en compte.
 - `V` : vérification de chaque locomotive (« décodeur de l'adresse 5, ton UID est-il FFFEBF74 ? »), avec le compte d'intervalles réguliers de chaque fenêtre.
 - `?` : aide.
 
@@ -128,9 +130,9 @@ L'UID se lit par exemple avec une MS2 et l'exemple `MfxObserver` de [Railuino](h
 
 ### Utilisation avec Rocrail
 
-1. Déclarez une centrale de type **CS2**, avec l'adresse IP de la centrale et le port **15731**.
-2. Pour chaque locomotive, choisissez le protocole **mfx** et l'adresse affichée par la centrale à son inscription (commande `L` du moniteur série), ou celle déclarée dans `src/main.cpp`.
-3. Cliquez sur **Go** pour mettre la voie sous tension.
+1. Déclarez une centrale **MBUS** (Märklin CAN, sous-bibliothèque TCP), avec l'adresse IP de la centrale et le port **15731**.
+2. Dans l'onglet **Options**, cochez **Master** : Rocrail joue alors le rôle de la MS2, donne les adresses et crée les locomotives. Redémarrez Rocrail.
+3. Cliquez sur **Go** pour mettre la voie sous tension, puis posez les locomotives : chacune apparaît dans la liste de Rocrail, avec son nom lu dans le décodeur. **Enregistrez le plan** pour garder les locomotives créées.
 
 ### Contribution
 
