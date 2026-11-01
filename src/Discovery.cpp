@@ -157,6 +157,9 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
     if (Loco *l = Loco::findLoco(sid))
     {
         l->mfxInfo(info);
+        // A decoder found without its name ("mfx <UID>"): the name read now
+        if (name[0] && l->name().startsWith("mfx "))
+            l->name(name);
         // Kept in the NVS with the locomotive: not read again at the next
         // start-up if every read succeeded
         LocoStore::save();
@@ -268,6 +271,14 @@ bool Discovery::readDeclaredConfigs()
     return !left;
 }
 
+/*
+ As the Gleisbox (recorded, October 2026): each bind is sent 4 times, about
+ 43 ms apart. Sent once, a bind was missed by the 150 Y 17 (Marklin), which
+ then kept answering the search and never got its address.
+*/
+static const uint8_t BIND_REPEAT = 4;
+static const uint32_t BIND_SPACING_MS = 43;
+
 static void sendBind(Loco *l)
 {
     MfxFrame f;
@@ -275,8 +286,13 @@ static void sendBind(Loco *l)
     f.bind(l->addr(), l->uid32());
     f.finish();
     uint8_t buff[BUFFER_SIZE];
-    if (f.toBuffer(buff, sizeof(buff)))
+    if (!f.toBuffer(buff, sizeof(buff)))
+        return;
+    for (uint8_t i = 0; i < BIND_REPEAT; i++)
+    {
         xQueueSendToFront(mfxQueue, buff, pdMS_TO_TICKS(10));
+        vTaskDelay(pdMS_TO_TICKS(BIND_SPACING_MS));
+    }
 }
 
 void Discovery::registerDecoder(uint32_t uid)
