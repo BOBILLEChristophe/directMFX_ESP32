@@ -299,6 +299,20 @@ static void sendBind(Loco *l)
     }
     if (lost)
         Serial.printf("Discovery: %u bind(s) of address %u not sent (queue full)\n", lost, l->addr());
+
+    // As the MS2: the bind is followed by an existence query at the new
+    // address (C1: bind, then verify, which the decoder answers)
+    MfxFrame v;
+    v.address(l->addr());
+    v.verify(l->uid32());
+    v.finish();
+    Feedback::Result r;
+    const bool yes = Feedback::ask(v, &r);
+    Serial.printf("Discovery: bind of %s (UID %08lX) at address %u %s (verify: %u regular intervals)\n",
+                  l->name().c_str(), (unsigned long)l->uid32(), l->addr(), yes ? "confirmed" : "NOT confirmed",
+                  r.windowRegular);
+    if (yes)
+        vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
 }
 
 void Discovery::registerDecoder(uint32_t uid)
