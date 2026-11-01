@@ -227,6 +227,7 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
 static const uint8_t READ_TRIES = 3;
 static uint8_t sReadTries[128]; // tries per address, READ_TRIES + 1 once read
 static volatile bool sRereadConfigs = false; // serial command C
+static volatile bool sConfigPending = false; // a new decoder not read completely
 
 bool Discovery::readDeclaredConfigs()
 {
@@ -356,9 +357,16 @@ void Discovery::registerDecoder(uint32_t uid)
     char decoderName[17] = "name";
     const bool named = readConfig(address, decoderName, sizeof(decoderName)) && decoderName[0];
     if (named)
-    {
-        l->name(decoderName);          // the name stored in the decoder, for Rocrail
+        l->name(decoderName); // the name stored in the decoder, for Rocrail
+    if (l->mfxInfo().complete)
         sReadTries[address] = READ_TRIES; // already read: not read again
+    else
+    {
+        // Read again later, as a declared locomotive (1 Nov: the 241 A,
+        // registered again after D4, gave half answers and kept the name
+        // "mfx 73E92A0F")
+        sReadTries[address] = 1;
+        sConfigPending = true;
     }
 
     Serial.printf("\nDiscovery: new decoder, UID %02X %02X %02X %02X -> address %u\n",
@@ -608,6 +616,12 @@ void Discovery::task(void *)
             sRereadConfigs = false;
             configsDone = false;
             lastConfigs = 0;
+        }
+        if (sConfigPending)
+        {
+            sConfigPending = false;
+            configsDone = false;
+            lastConfigs = xTaskGetTickCount(); // in RETRY_MS
         }
 
         // The configurations are read once the track has been on for
