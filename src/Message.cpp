@@ -213,7 +213,7 @@ void Message::setSID(void *p)
         {
             for (byte i = 0; i < locoSize; i++)
             {
-                if (loco[i] != nullptr)
+                if (loco[i] != nullptr && loco[i]->uid32() != 0) // UID unknown: no bind
                 {
 
                     if (trace)
@@ -366,8 +366,24 @@ void Message::parse()
     Loco *currentLoco = Loco::findLoco(address);
     if (currentLoco == nullptr)
     {
-        Serial.printf("Loco inconnue : adresse %u, commande ignorée\n", address);
-        return;
+        // As a Gleisbox: every order of the master goes to the track, even
+        // for a locomotive bound in another session (its decoder kept its
+        // address). The locomotive is added to the refresh, UID unknown.
+        if (locId >= 0x4000 && locId < 0x8000 && address != 0)
+        {
+            currentLoco = Loco::createLoco(address, "mfx " + String(address), 0, 0, 0, 0);
+            if (!addLoco(currentLoco))
+            {
+                Serial.printf("Loco %u : trop de locomotives (MAX_LOCOS), commande ignoree\n", address);
+                return;
+            }
+            Serial.printf("Loco %u ajoutee (ordre du maitre, UID inconnu)\n", address);
+        }
+        else
+        {
+            Serial.printf("Loco inconnue : identifiant %04X, commande ignoree\n", locId);
+            return;
+        }
     }
 
     switch (cmd)

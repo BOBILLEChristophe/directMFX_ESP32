@@ -424,7 +424,7 @@ static void verifyAll()
     {
         const uint16_t a = list[i];
         Loco *l = Loco::findLoco(a);
-        if (l == nullptr)
+        if (l == nullptr || l->uid32() == 0)
             continue;
         MfxFrame f;
         f.address(a);
@@ -599,6 +599,8 @@ static void verifyNext()
         Loco *l = Loco::findLoco(a);
         if (l == nullptr)
             continue;
+        if (l->uid32() == 0)
+            continue; // UID unknown (added by an order of the master): a verify with UID 0 would delete it
         Presence &p = sPresence[a];
         if (p.absent && now - p.since < pdMS_TO_TICKS(ABSENT_RETRY_MS))
             continue; // queried again later
