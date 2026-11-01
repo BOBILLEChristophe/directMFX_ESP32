@@ -288,11 +288,17 @@ static void sendBind(Loco *l)
     uint8_t buff[BUFFER_SIZE];
     if (!f.toBuffer(buff, sizeof(buff)))
         return;
+    // The queue is often full (refresh of every locomotive): waiting is
+    // needed, a bind dropped with a short timeout never reached the track
+    uint8_t lost = 0;
     for (uint8_t i = 0; i < BIND_REPEAT; i++)
     {
-        xQueueSendToFront(mfxQueue, buff, pdMS_TO_TICKS(10));
+        if (xQueueSendToFront(mfxQueue, buff, pdMS_TO_TICKS(200)) != pdPASS)
+            lost++;
         vTaskDelay(pdMS_TO_TICKS(BIND_SPACING_MS));
     }
+    if (lost)
+        Serial.printf("Discovery: %u bind(s) of address %u not sent (queue full)\n", lost, l->addr());
 }
 
 void Discovery::registerDecoder(uint32_t uid)
@@ -450,6 +456,47 @@ static void console()
     }
 }
 
+/*
+ Existence query (Krauss 3.2.5, 4.1 and 4.3), one locomotive at a time, in
+ turn with the search, as the MS2 does ("search, query SID 1, search, query
+ SID 2..."). A decoder that receives no query for its own address during 5
+ to 10 minutes is ready to register again: without them our decoders lost
+ their registration. A locomotive that does not answer gets its bind again
+ (at most every REBIND_MS): its decoder may have missed it, or may be back
+ on the track.
+*/
+static const uint32_t REBIND_MS = 30000;
+static TickType_t sLastRebind[128];
+
+static void verifyNext()
+{
+    static uint8_t next = 1;
+    for (uint8_t k = 0; k < 127; k++)
+    {
+        const uint8_t a = next;
+        next = next % 127 + 1;
+        Loco *l = Loco::findLoco(a);
+        if (l == nullptr)
+            continue;
+        MfxFrame f;
+        f.address(a);
+        f.verify(l->uid32());
+        f.finish();
+        if (Feedback::ask(f))
+        {
+            vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
+            return;
+        }
+        const TickType_t now = xTaskGetTickCount();
+        if (sLastRebind[a] == 0 || now - sLastRebind[a] >= pdMS_TO_TICKS(REBIND_MS))
+        {
+            sLastRebind[a] = now;
+            sendBind(l);
+        }
+        return;
+    }
+}
+
 void Discovery::task(void *)
 {
     vTaskDelay(pdMS_TO_TICKS(3000)); // let the decoders start
@@ -496,6 +543,8 @@ void Discovery::task(void *)
                 last = uid;
                 lastTime = xTaskGetTickCount();
             }
+            if (Centrale::power())
+                verifyNext();
         }
         vTaskDelay(pdMS_TO_TICKS(PERIOD_MS));
     }

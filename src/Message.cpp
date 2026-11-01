@@ -209,7 +209,10 @@ void Message::setSID(void *p)
                     frame.bind(loco[i]->addr(), uid);
                     frame.finish();
                     frame.toBuffer(buff, sizeof(buff));
-                    xQueueSend(mfxQueue, &buff, 0);
+                    // Waits for room: the binds are now sent only a few times,
+                    // none may be lost in a full queue
+                    if (xQueueSend(mfxQueue, &buff, pdMS_TO_TICKS(200)) != pdPASS)
+                        Serial.printf("setSID: bind of address %u not sent (queue full)\n", loco[i]->addr());
                     vTaskDelay(pdMS_TO_TICKS(10));
                 }
             }
