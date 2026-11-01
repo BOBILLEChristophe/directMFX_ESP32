@@ -477,14 +477,18 @@ static void console()
  to 10 minutes is ready to register again: without them our decoders lost
  their registration.
 
- A locomotive that does not answer is not on the track: it gets no bind
+ A locomotive that does not answer ABSENT_MISSES times in a row is not on
+ the track (one answer may be missed, or weak when the decoder has just
+ started: 64 edges instead of 300 for the 241 A, 1 Nov): it gets no bind
  (if it comes back without its address it answers the search, and gets its
  bind there) and is queried again only every ABSENT_RETRY_MS, so that the
  locomotives in a box do not take the track time. Its arrival and its
  departure are written once in the log.
 */
 static const uint32_t ABSENT_RETRY_MS = 60000;
+static const uint8_t ABSENT_MISSES = 3;
 static bool sAbsent[128];
+static uint8_t sMisses[128];
 static TickType_t sAbsentSince[128];
 
 static void verifyNext()
@@ -505,14 +509,23 @@ static void verifyNext()
         f.verify(l->uid32());
         f.finish();
         const bool yes = Feedback::ask(f);
-        if (yes != !sAbsent[a])
-            Serial.printf("Discovery: %s (address %u) %s\n", l->name().c_str(), a,
-                          yes ? "is on the track" : "does not answer, queried again every minute");
-        sAbsent[a] = !yes;
         if (yes)
+        {
+            if (sAbsent[a])
+                Serial.printf("Discovery: %s (address %u) is on the track\n", l->name().c_str(), a);
+            sAbsent[a] = false;
+            sMisses[a] = 0;
             vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
-        else
+        }
+        else if (sAbsent[a])
             sAbsentSince[a] = now;
+        else if (++sMisses[a] >= ABSENT_MISSES)
+        {
+            Serial.printf("Discovery: %s (address %u) does not answer, queried again every minute\n",
+                          l->name().c_str(), a);
+            sAbsent[a] = true;
+            sAbsentSince[a] = now;
+        }
         return;
     }
 }
