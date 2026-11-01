@@ -11,16 +11,16 @@
    by a 1; without an answer the bit is 0, and that is asked again to be
    sure. After an answer, the next question waits 150 ms.
 
-   A new decoder gets the first free address, is added to the refresh and
-   receives its address (Bind). The serial port prints its UID and the line
-   to add to main.cpp to keep it after a restart.
+   As a Gleisbox, the command station gives no address itself: the UID
+   found is reported to the master (Rocrail as master, or an MS2: CAN
+   command 0x01, response), which chooses the address and sends the bind
+   (0x02), the existence query (0x03) and the reads of CVs (0x07); they are
+   executed here and answered as the Gleisbox does (recorded on the CAN bus,
+   31 October 2026). Each known locomotive is also queried in turn on the
+   track (presence), which keeps its registration (Krauss 4.3).
 
-   The configuration of the decoder is then read through its CVs (MfxConfig:
-   name, manufacturer, symbols of the functions, driving parameters) and
-   printed, with the line for main.cpp. When the track is first powered,
-   the configuration of each locomotive declared in main.cpp is read as
-   well (3 s after the track is on, then twice more, 20 s apart, for the
-   decoders that did not answer): a test of the reading of CVs.
+   Serial command C reads the configuration of every known locomotive
+   (test of the reading of CVs).
 
    Needs the feedback sensor (Feedback.h).
 
@@ -45,9 +45,17 @@ public:
     // receives the name read, null-terminated.
     static bool readConfig(uint16_t sid, char *name = nullptr, size_t size = 0);
 
+    // Orders of the master (Rocrail, MS2), as for a Gleisbox: done by the
+    // discovery task, which answers the master when it is done.
+    static void requestBind(uint32_t uid, uint16_t sid);   // CAN 0x02
+    static void requestVerify(uint32_t uid, uint16_t sid); // CAN 0x03
+    // CAN 0x07: count bytes of CV cv from index, locomotive identifier locId
+    // (0x4000 + SID for mfx)
+    static void requestRead(uint32_t locId, uint16_t cv, uint8_t index, uint8_t count);
+
 private:
     static void task(void *);
     static bool probe(uint8_t count, uint32_t uid);
-    static void registerDecoder(uint32_t uid);
+    static void masterOrders();
     static bool readDeclaredConfigs();
 };

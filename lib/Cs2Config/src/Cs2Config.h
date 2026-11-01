@@ -35,7 +35,7 @@ public:
     struct Loco
     {
         const char *name;
-        uint8_t sid;        // rail address (CS2 loco id 0x4000 + sid)
+        uint16_t sid;       // rail address (CS2 loco id 0x4000 + sid)
         uint32_t mfxUid;    // UID of the decoder
         bool haveConfig;    // the values below were read in the decoder
         uint8_t av, bv;     // acceleration, braking (as in the decoder, x 0.25 s)

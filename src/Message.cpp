@@ -9,6 +9,7 @@
 #include "Centrale.h"
 #include "MfxFrame.h"
 #include "Cs2Config.h"
+#include "Discovery.h"
 
 Loco **Message::loco = nullptr;
 volatile byte Message::locoSize = 0;
@@ -40,7 +41,6 @@ void Message::setup(Loco *locoArray[], byte capacity, byte count)
 
     xTaskCreatePinnedToCore(periodic, "Periodic", 2 * 1024, (void *)loco, 6, NULL, 0);
     xTaskCreatePinnedToCore(centrale, "Centrale", 2 * 1024, (void *)loco, 5, NULL, 0);
-    xTaskCreatePinnedToCore(setSID, "SetSID", 2 * 1024, (void *)loco, 5, NULL, 0);
 }
 
 /*
@@ -64,7 +64,7 @@ bool Message::addLoco(Loco *l)
     return added;
 }
 
-bool Message::removeLoco(uint8_t address)
+bool Message::removeLoco(uint16_t address)
 {
     bool removed = false;
     if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
@@ -179,68 +179,6 @@ void Message::centrale(void *p)
     }
 }
 
-void Message::setSID(void *p)
-{
-    Loco **loco;
-    loco = (Loco **)p;
-    TickType_t xLastWakeTime;
-    xLastWakeTime = xTaskGetTickCount();
-
-    /*
-     The binds are sent only for BIND_ROUNDS rounds after the track is
-     switched on, not every 500 ms for ever: a Gleisbox sends a bind only
-     while it registers a decoder, and an ESU decoder (040 DE 9) answered
-     only half of the questions while it heard about 9 binds a second
-     (October 2026). A decoder put on the track later, or that registered
-     elsewhere, answers the search: Discovery then sends its bind again.
-    */
-    static const uint8_t BIND_ROUNDS = 4;
-    uint8_t rounds = 0;
-    bool wasPowered = false;
-
-    for (;;)
-    {
-        const bool powered = Centrale::power();
-        if (powered && !wasPowered)
-            rounds = 0; // the track has just been switched on
-        wasPowered = powered;
-        const bool send = powered && rounds < BIND_ROUNDS;
-        if (send)
-            rounds++;
-
-        if (send && xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
-        {
-            for (byte i = 0; i < locoSize; i++)
-            {
-                if (loco[i] != nullptr)
-                {
-
-                    if (trace)
-                        Serial.printf("setSID- %s\n", loco[i]->name().c_str());
-
-                    /*
-                    Cette commande est envoyée à l'adresse de diffusion 0, puisque le décodeur ne connaît pas encore le SID.
-                    Le décodeur passe ainsi en mode de fonctionnement avec l'UID correspondant et peut ensuite être adressé sous ce SID.
-                    */
-                    const uint32_t uid = (uint32_t)loco[i]->UID(0) << 24 | (uint32_t)loco[i]->UID(1) << 16 |
-                                         (uint32_t)loco[i]->UID(2) << 8 | loco[i]->UID(3);
-                    MfxFrame frame;
-                    frame.broadcast();
-                    frame.bind(loco[i]->addr(), uid);
-                    frame.finish();
-                    frame.toBuffer(buff, sizeof(buff));
-                    // Waits for room: the binds are now sent only a few times,
-                    // none may be lost in a full queue
-                    if (xQueueSend(mfxQueue, &buff, pdMS_TO_TICKS(200)) != pdPASS)
-                        Serial.printf("setSID: bind of address %u not sent (queue full)\n", loco[i]->addr());
-                    vTaskDelay(pdMS_TO_TICKS(10));
-                }
-            }
-            xSemaphoreGive(taskSemaphore);
-        }
-        vTaskDelayUntil(&xLastWakeTime, pdMS_TO_TICKS(500));
-    }
-}
 
 void Message::decodeMsg(byte *rxBuffer)
 {
@@ -291,7 +229,17 @@ void Message::parse()
         if (length < 5)
             return;
         if (traceCommands)
-            Serial.printf("cmd systeme, sous-commande %u\n", data[4]);
+        {
+            // Every byte, to compare with the MS2 captures (sub-command 0x20 =
+            // system time, sent every minute by Rocrail, is left out)
+            if (data[4] != 0x20)
+            {
+                Serial.printf("Rocrail: system 0x%02X (%u bytes:", data[4], length);
+                for (byte i = 0; i < length; i++)
+                    Serial.printf(" %02X", data[i]);
+                Serial.println(")");
+            }
+        }
         switch (data[4]) // sous-commande
         {
         case 0x00: // Arrêt du système
@@ -304,7 +252,52 @@ void Message::parse()
             break;
         case 0x03: // Arrêt d'urgence de la locomotive : à implémenter (étape 3)
             break;
+        case 0x09: // re-registration counter, set by the master (MS2: at power on)
+            if (length >= 7)
+            {
+                const uint16_t counter = (uint16_t)data[5] << 8 | data[6];
+                if (counter != Centrale::counter())
+                {
+                    Centrale::setCounter(counter);
+                    Serial.printf("Rocrail: re-registration counter %u (from the master)\n", counter);
+                }
+            }
+            break;
         }
+        systemAnswer();
+        return;
+    }
+
+    if (cmd == CAN_STATUS_DATA)
+    {
+        statusDataAnswer();
+        return;
+    }
+
+    // Read of CVs ordered by the master: identifier, index << 10 | CV, count
+    if (cmd == CAN_READ_CONFIG && length >= 7)
+    {
+        const uint32_t locId = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+        const uint16_t ic = (uint16_t)data[4] << 8 | data[5];
+        Serial.printf("Rocrail: read CV %u index %u, %u bytes, identifier %04lX\n", ic & 0x3FF, ic >> 10, data[6],
+                      (unsigned long)locId);
+        if (locId >= 0x4000 && locId < 0x8000 && data[6] > 0)
+            Discovery::requestRead(locId, ic & 0x3FF, (uint8_t)(ic >> 10), data[6]);
+        return;
+    }
+
+    // Orders of the master for the registration of the decoders (a Gleisbox
+    // executes them): bind and verify, UID then SID
+    if ((cmd == CAN_MFX_BIND || cmd == CAN_MFX_VERIFY) && length >= 6)
+    {
+        const uint32_t uid = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+        const uint16_t sid = (uint16_t)data[4] << 8 | data[5];
+        Serial.printf("Rocrail: %s UID %08lX SID %u\n", cmd == CAN_MFX_BIND ? "bind" : "verify",
+                      (unsigned long)uid, sid);
+        if (cmd == CAN_MFX_BIND)
+            Discovery::requestBind(uid, sid);
+        else
+            Discovery::requestVerify(uid, sid);
         return;
     }
 
@@ -314,12 +307,31 @@ void Message::parse()
         return;
     }
 
-    const uint8_t address = data[3];
+    // CS2 locomotive identifier: mfx from 0x4000 (0x4000 + SID), else the
+    // low byte as before (MM2)
+    const uint16_t locId = (uint16_t)data[2] << 8 | data[3];
+    const uint16_t address = (locId >= 0x4000 && locId < 0x8000) ? locId - 0x4000 : data[3];
     Loco *currentLoco = Loco::findLoco(address);
     if (currentLoco == nullptr)
     {
-        Serial.printf("Loco inconnue : adresse %u, commande ignorée\n", address);
-        return;
+        // As a Gleisbox: every order of the master goes to the track, even
+        // for a locomotive bound in another session (its decoder kept its
+        // address). The locomotive is added to the refresh, UID unknown.
+        if (locId >= 0x4000 && locId < 0x8000 && address != 0)
+        {
+            currentLoco = Loco::createLoco(address, "mfx " + String(address), 0, 0, 0, 0);
+            if (!addLoco(currentLoco))
+            {
+                Serial.printf("Loco %u : trop de locomotives (MAX_LOCOS), commande ignoree\n", address);
+                return;
+            }
+            Serial.printf("Loco %u ajoutee (ordre du maitre, UID inconnu)\n", address);
+        }
+        else
+        {
+            Serial.printf("Loco inconnue : identifiant %04X, commande ignoree\n", locId);
+            return;
+        }
     }
 
     switch (cmd)
@@ -387,14 +399,15 @@ void Message::parse()
 */
 void Message::traceUnknown()
 {
-    static uint8_t seen[32] = {0};
-    if (!traceCommands || (seen[cmd >> 3] & (1 << (cmd & 7))))
+    // The first 5 of each command (Rocrail as master: discovery, bind...)
+    static uint8_t seen[256] = {0};
+    if (!traceCommands || seen[cmd] >= 5)
         return;
-    seen[cmd >> 3] |= 1 << (cmd & 7);
+    seen[cmd]++;
     Serial.printf("Rocrail: command 0x%02X not handled (%u bytes:", cmd, length);
     for (byte i = 0; i < length; i++)
         Serial.printf(" %02X", data[i]);
-    Serial.println("), printed once");
+    Serial.printf(")%s\n", seen[cmd] == 5 ? ", printed 5 times" : "");
 }
 
 // One 13-byte CS2 frame: id (big endian), length, 8 data bytes
@@ -422,6 +435,94 @@ static uint16_t cs2Hash(uint32_t uid)
 }
 
 /*
+ Answers of a Gleisbox to the system commands (recorded on the CAN bus of an
+ MS2 and a Gleisbox, 31 Oct): the same bytes with the response bit, for STOP,
+ GO, track protocols (0x08), re-registration counter (0x09)... The identifier
+ (0x0C, "Kennung", asked by Rocrail as master) is answered with 7 bytes:
+ UID, 0x0C, identifier. Only the commands for this device or for all
+ (UID 0) are answered.
+*/
+bool Message::answer(uint8_t cmd, uint8_t len, const uint8_t *d)
+{
+    uint8_t frame[13];
+    putFrame(frame, ((uint32_t)cmd << 17) | 0x00010000UL | cs2Hash(Centrale::gUid()), len, d);
+    return sendToRocrail(frame, sizeof(frame));
+}
+
+static const uint16_t KENNUNG = 0x0001; // 0 and FFFF are not valid
+
+void Message::systemAnswer()
+{
+    const uint32_t own = Centrale::gUid();
+    const uint32_t to = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+    if (to != 0 && to != own)
+        return;
+    uint8_t d[8];
+    memcpy(d, data, 8);
+    uint8_t len = length;
+    switch (data[4])
+    {
+    case 0x00: // STOP
+    case 0x01: // GO
+    case 0x02: // halt
+    case 0x08: // track protocols
+    case 0x09: // re-registration counter
+        break;
+    case 0x0C: // identifier: asked (5 bytes) -> answered with it (7 bytes)
+        d[5] = KENNUNG >> 8;
+        d[6] = KENNUNG & 0xFF;
+        len = 7;
+        break;
+    default:
+        return; // not answered (yet)
+    }
+    uint8_t frame[13];
+    putFrame(frame, ((uint32_t)CAN_SYSTEM_CONTROL << 17) | 0x00010000UL | cs2Hash(own), len, d);
+    sendToRocrail(frame, sizeof(frame));
+}
+
+/*
+ Command 0x1D (Statusdaten Konfiguration), index 0: the description of the
+ device, sent in packets of 8 bytes (the hash field of each one is its
+ number, from 1), then a frame of 6 bytes: UID, index, number of packets
+ (CS2 CAN protocol 2.0, 6.2). Content: number of measurement channels,
+ number of configuration channels, 2 free bytes, serial number (4 bytes),
+ article number (8 characters), name (ended by 0). No channel: Rocrail
+ asks no more.
+*/
+void Message::statusDataAnswer()
+{
+    const uint32_t own = Centrale::gUid();
+    const uint32_t to = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+    if (length < 5 || to != own)
+        return;
+    const uint8_t index = data[4];
+    if (index != 0)
+        return; // no channel
+    uint8_t desc[32];
+    memset(desc, 0, sizeof(desc));
+    desc[0] = 0; // measurement channels
+    desc[1] = 0; // configuration channels
+    desc[4] = (uint8_t)(own >> 24);
+    desc[5] = (uint8_t)(own >> 16);
+    desc[6] = (uint8_t)(own >> 8);
+    desc[7] = (uint8_t)own;
+    memcpy(desc + 8, "60116\0\0\0", 8);
+    const char *name = "MFX Station"; // 16 bytes at most, with the final 0
+    strncpy((char *)desc + 16, name, 15);
+    const uint8_t packets = 4; // 32 bytes
+    uint8_t frames[13 * 5];
+    for (uint8_t p = 0; p < packets; p++)
+        putFrame(frames + 13 * p, ((uint32_t)CAN_STATUS_DATA << 17) | 0x00010000UL | (uint16_t)(p + 1), 8,
+                 desc + 8 * p);
+    const uint8_t end[6] = {(uint8_t)(own >> 24), (uint8_t)(own >> 16), (uint8_t)(own >> 8), (uint8_t)own, index,
+                            packets};
+    putFrame(frames + 13 * packets, ((uint32_t)CAN_STATUS_DATA << 17) | 0x00010000UL | cs2Hash(own), 6, end);
+    const bool ok = sendToRocrail(frames, sizeof(frames));
+    Serial.printf("Rocrail: device description sent (index 0, %u packets)%s\n", packets, ok ? "" : ", not sent");
+}
+
+/*
  Command 0x18 (ping): every device of the bus answers with its UID, its
  software version and its type. The command station answers as the
  master of a CS2 (type 0xFFFF, version 3.8, as the CS2 GUI emulated in
@@ -432,30 +533,17 @@ void Message::pingAnswer()
     static bool told = false;
     const uint32_t uid = Centrale::gUid();
     const uint8_t d[8] = {(uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8), (uint8_t)uid,
-                          3, 8, 0xFF, 0xFF};
+                          1, 0x2F, 0x00, 0x11}; // as a Gleisbox: version 1.47, type 0x0011 (recorded)
     uint8_t frame[13];
     putFrame(frame, ((uint32_t)CAN_PING << 17) | 0x00010000UL | cs2Hash(uid), 8, d);
     const bool ok = sendToRocrail(frame, sizeof(frame));
     if (!told)
     {
-        Serial.printf("Rocrail: ping answered as a CS2 (UID %08lX)%s\n", (unsigned long)uid, ok ? "" : ", not sent");
+        Serial.printf("Rocrail: ping answered as a Gleisbox (UID %08lX, version 1.47, type 0011)%s\n", (unsigned long)uid, ok ? "" : ", not sent");
         told = true;
     }
 }
 
-void Message::announceBind(uint32_t uid, uint16_t sid)
-{
-    const uint32_t own = Centrale::gUid();
-    const uint8_t d[6] = {(uint8_t)(uid >> 24), (uint8_t)(uid >> 16), (uint8_t)(uid >> 8), (uint8_t)uid,
-                          (uint8_t)(sid >> 8), (uint8_t)sid};
-    uint8_t frames[26];
-    const uint32_t bindId = ((uint32_t)CAN_MFX_BIND << 17) | cs2Hash(own);
-    putFrame(frames, bindId, 6, d);                       // the order (as from an MS2)
-    putFrame(frames + 13, bindId | 0x00010000UL, 6, d);   // the answer (as from the track box)
-    const bool ok = sendToRocrail(frames, sizeof(frames));
-    Serial.printf("Rocrail: bind announced, UID %08lX -> address %u%s\n", (unsigned long)uid, sid,
-                  ok ? "" : " (not connected)");
-}
 
 /*
  Command 0x20: Rocrail asks for a configuration file, by its name in the 8

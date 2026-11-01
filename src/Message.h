@@ -28,6 +28,10 @@ const byte BUFF_MSG_SIZE = 100;
 // A Marklin MS2 with its Gleisbox sends it every 46 ms (recorded on the
 // track); it was 500 ms before.
 #define STATION_PERIOD_MS 50
+#define CAN_LOCO_DISCOVERY 0x01      // search of decoders (Lok Discovery)
+#define CAN_MFX_VERIFY 0x03          // existence query (UID, SID)
+#define CAN_READ_CONFIG 0x07          // read of CVs (locomotive identifier, index/CV, count)
+#define CAN_STATUS_DATA 0x1D        // description of a device (Statusdaten Konfiguration)
 #define CAN_PING 0x18               // who is on the bus? (answered as a CS2)
 #define CAN_CONFIG_DATA 0x20        // request of a configuration file ("loks"...)
 #define CAN_CONFIG_DATA_STREAM 0x21 // the file
@@ -61,7 +65,7 @@ public:
     static bool addLoco(Loco *l);
     // Removes the locomotive at this address from the refresh. Returns false
     // if it was not there.
-    static bool removeLoco(uint8_t address);
+    static bool removeLoco(uint16_t address);
     // Prints each command received from Rocrail (speed, direction, functions)
     static void setTrace(bool on) { traceCommands = on; }
     static void decodeMsg(byte *);
@@ -70,16 +74,19 @@ public:
     static void driveFrame(Loco *l, byte *out, size_t outSize);
     static void sendNow(Loco *l);
     static void centrale(void *);
-    static void setSID(void *);
 
-    // Tells Rocrail that the decoder uid has the rail address sid, as an
-    // MS2 does on the CAN bus when it registers a locomotive (command 0x02,
-    // UID and SID), followed by the answer of the track box.
-    static void announceBind(uint32_t uid, uint16_t sid);
+
+    // Sends to Rocrail an answer of this device (response bit set, hash of
+    // its UID): command cmd, len bytes of d.
+    static bool answer(uint8_t cmd, uint8_t len, const uint8_t *d);
 
 private:
     static void configRequest();
     static void pingAnswer();
+    // As a Gleisbox: answers a system command (echo, or the identifier)
+    static void systemAnswer();
+    // As a Gleisbox: the description of the device (command 0x1D, index 0)
+    static void statusDataAnswer();
     static void sendLocoList();
     static void traceUnknown();
 };
