@@ -646,23 +646,65 @@ static void verifyNext()
 */
 struct MasterOrder
 {
-    uint8_t type; // 2 bind, 3 verify
-    uint32_t uid;
+    uint8_t type; // 2 bind, 3 verify, 7 read config
+    uint32_t uid; // read config: the CS2 locomotive identifier
     uint16_t sid;
+    uint16_t cv;
+    uint8_t index;
+    uint8_t count;
 };
 static QueueHandle_t sOrders = nullptr;
 
-static void postOrder(uint8_t type, uint32_t uid, uint16_t sid)
+static void postOrder(uint8_t type, uint32_t uid, uint16_t sid, uint16_t cv = 0, uint8_t index = 0,
+                      uint8_t count = 0)
 {
     if (sOrders == nullptr)
         sOrders = xQueueCreate(8, sizeof(MasterOrder));
-    const MasterOrder o = {type, uid, sid};
+    const MasterOrder o = {type, uid, sid, cv, index, count};
     if (sOrders == nullptr || xQueueSend(sOrders, &o, 0) != pdPASS)
         Serial.println("Discovery: order of the master lost (queue full)");
 }
 
 void Discovery::requestBind(uint32_t uid, uint16_t sid) { postOrder(2, uid, sid); }
 void Discovery::requestVerify(uint32_t uid, uint16_t sid) { postOrder(3, uid, sid); }
+void Discovery::requestRead(uint32_t locId, uint16_t cv, uint8_t index, uint8_t count)
+{
+    postOrder(7, locId, (uint16_t)(locId & 0x3FFF), cv, index, count);
+}
+
+/*
+ Read config 0x07 (CAN 0x07, recorded between an MS2 and a Gleisbox):
+ order "locomotive identifier, index << 10 | CV, count"; the Gleisbox
+ answers each byte in a frame of 7 bytes: identifier, index << 10 | CV
+ (the index of this byte), value. Read on the track 2 bytes at a time, as
+ the MS2 does. Nothing is answered for the bytes that could not be read.
+*/
+static void readForMaster(const MasterOrder &o)
+{
+    uint8_t done = 0;
+    while (done < o.count)
+    {
+        const uint8_t n = (o.count - done) >= 2 ? 2 : 1;
+        uint8_t v[2] = {0, 0};
+        const uint8_t index = (uint8_t)(o.index + done);
+        if (!Feedback::readCV(o.sid, o.cv, index, n, v))
+        {
+            Serial.printf("Discovery: read of CV %u index %u at address %u for the master: no answer\n", o.cv,
+                          index, o.sid);
+            return;
+        }
+        for (uint8_t k = 0; k < n; k++)
+        {
+            const uint16_t ic = (uint16_t)((index + k) & 0x3F) << 10 | (o.cv & 0x3FF);
+            const uint8_t d[7] = {(uint8_t)(o.uid >> 24), (uint8_t)(o.uid >> 16), (uint8_t)(o.uid >> 8),
+                                  (uint8_t)o.uid, (uint8_t)(ic >> 8), (uint8_t)ic, v[k]};
+            Message::answer(CAN_READ_CONFIG, 7, d);
+        }
+        done += n;
+    }
+    Serial.printf("Discovery: CV %u index %u..%u at address %u read for the master\n", o.cv, o.index,
+                  o.index + o.count - 1, o.sid);
+}
 
 // The locomotive with this UID, at address sid (created or moved there)
 static Loco *locoAt(uint32_t uid, uint16_t sid)
@@ -695,6 +737,11 @@ void Discovery::masterOrders()
     MasterOrder o;
     while (sOrders != nullptr && xQueueReceive(sOrders, &o, 0) == pdPASS)
     {
+        if (o.type == 7)
+        {
+            readForMaster(o);
+            continue;
+        }
         const uint8_t d[7] = {(uint8_t)(o.uid >> 24), (uint8_t)(o.uid >> 16), (uint8_t)(o.uid >> 8), (uint8_t)o.uid,
                               (uint8_t)(o.sid >> 8), (uint8_t)o.sid, 0xFF};
         if (o.sid > 16383 || (o.sid == 0 && o.uid != 0))
@@ -754,7 +801,9 @@ void Discovery::task(void *)
     vTaskDelay(pdMS_TO_TICKS(3000)); // let the decoders start
     uint32_t last = 0;
     TickType_t lastTime = 0;
-    bool configsDone = false;
+    // As a Gleisbox: the configurations are read by the master (CAN 0x07),
+    // not here; serial command C reads them all the same (test)
+    bool configsDone = true;
     TickType_t lastConfigs = 0;
 
     for (;;)
@@ -767,12 +816,7 @@ void Discovery::task(void *)
             configsDone = false;
             lastConfigs = 0;
         }
-        if (sConfigPending)
-        {
-            sConfigPending = false;
-            configsDone = false;
-            lastConfigs = xTaskGetTickCount(); // in RETRY_MS
-        }
+        sConfigPending = false; // the master reads the configurations
 
         // The configurations are read once the track has been on for
         // POWERED_MS without a break (the decoders must have started),

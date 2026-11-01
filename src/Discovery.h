@@ -49,6 +49,9 @@ public:
     // discovery task, which answers the master when it is done.
     static void requestBind(uint32_t uid, uint16_t sid);   // CAN 0x02
     static void requestVerify(uint32_t uid, uint16_t sid); // CAN 0x03
+    // CAN 0x07: count bytes of CV cv from index, locomotive identifier locId
+    // (0x4000 + SID for mfx)
+    static void requestRead(uint32_t locId, uint16_t cv, uint8_t index, uint8_t count);
 
 private:
     static void task(void *);

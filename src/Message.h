@@ -30,6 +30,7 @@ const byte BUFF_MSG_SIZE = 100;
 #define STATION_PERIOD_MS 50
 #define CAN_LOCO_DISCOVERY 0x01      // search of decoders (Lok Discovery)
 #define CAN_MFX_VERIFY 0x03          // existence query (UID, SID)
+#define CAN_READ_CONFIG 0x07          // read of CVs (locomotive identifier, index/CV, count)
 #define CAN_STATUS_DATA 0x1D        // description of a device (Statusdaten Konfiguration)
 #define CAN_PING 0x18               // who is on the bus? (answered as a CS2)
 #define CAN_CONFIG_DATA 0x20        // request of a configuration file ("loks"...)

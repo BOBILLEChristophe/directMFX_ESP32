@@ -326,6 +326,18 @@ void Message::parse()
         return;
     }
 
+    // Read of CVs ordered by the master: identifier, index << 10 | CV, count
+    if (cmd == CAN_READ_CONFIG && length >= 7)
+    {
+        const uint32_t locId = (uint32_t)data[0] << 24 | (uint32_t)data[1] << 16 | (uint32_t)data[2] << 8 | data[3];
+        const uint16_t ic = (uint16_t)data[4] << 8 | data[5];
+        Serial.printf("Rocrail: read CV %u index %u, %u bytes, identifier %04lX\n", ic & 0x3FF, ic >> 10, data[6],
+                      (unsigned long)locId);
+        if (locId >= 0x4000 && locId < 0x8000 && data[6] > 0)
+            Discovery::requestRead(locId, ic & 0x3FF, (uint8_t)(ic >> 10), data[6]);
+        return;
+    }
+
     // Orders of the master for the registration of the decoders (a Gleisbox
     // executes them): bind and verify, UID then SID
     if ((cmd == CAN_MFX_BIND || cmd == CAN_MFX_VERIFY) && length >= 6)
