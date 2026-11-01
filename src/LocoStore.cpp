@@ -27,7 +27,8 @@ static uint8_t readRecords(Record *out, uint8_t max)
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false)) // read-write: works on the first boot too
         return 0;
-    const size_t len = prefs.getBytesLength(NVS_KEY);
+    // isKey() first: getBytesLength() logs an error while nothing is stored
+    const size_t len = prefs.isKey(NVS_KEY) ? prefs.getBytesLength(NVS_KEY) : 0;
     uint8_t n = 0;
     if (len > 0 && len % sizeof(Record) == 0 && len / sizeof(Record) <= max)
     {
@@ -128,7 +129,8 @@ void LocoStore::erase()
     Preferences prefs;
     if (prefs.begin(NVS_NAMESPACE, false))
     {
-        prefs.remove(NVS_KEY);
+        if (prefs.isKey(NVS_KEY))
+            prefs.remove(NVS_KEY);
         prefs.end();
     }
 }
