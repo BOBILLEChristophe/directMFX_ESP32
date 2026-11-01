@@ -142,6 +142,7 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
     MfxInfo info;
     memset(&info, 0, sizeof(info));
     info.valid = true;
+    info.complete = (st == MfxConfig::OK && c.failures == 0);
     info.av = c.acceleration;
     info.bv = c.braking;
     info.vmin = c.vmin;
@@ -156,6 +157,9 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
     if (Loco *l = Loco::findLoco(sid))
     {
         l->mfxInfo(info);
+        // Kept in the NVS with the locomotive: not read again at the next
+        // start-up if every read succeeded
+        LocoStore::save();
         // No bind announced to Rocrail for now: once a configuration was read
         // completely, the announce made the locomotives stop answering speed
         // and function commands (October 2026, found by testing the commits
@@ -219,6 +223,7 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
 */
 static const uint8_t READ_TRIES = 3;
 static uint8_t sReadTries[128]; // tries per address, READ_TRIES + 1 once read
+static volatile bool sRereadConfigs = false; // serial command C
 
 bool Discovery::readDeclaredConfigs()
 {
@@ -228,6 +233,12 @@ bool Discovery::readDeclaredConfigs()
         Loco *l = Loco::findLoco(a);
         if (l == nullptr || sReadTries[a] >= READ_TRIES)
             continue;
+        if (l->mfxInfo().complete)
+        {
+            // Read completely before (kept in the NVS): not read again
+            sReadTries[a] = READ_TRIES;
+            continue;
+        }
         if (!Centrale::power())
             return false; // the track was switched off: later
         if (l->speed() != 0)
@@ -336,6 +347,8 @@ void Discovery::registerDecoder(uint32_t uid)
    V : existence query (ping, Krauss 3.2.5) of every declared locomotive,
        with the counts of the 1-bit feedback: does its decoder answer, and
        how strongly?
+   C : read the configurations of the locomotives again (otherwise a
+       configuration read completely is kept in the NVS and not read again).
    L : list of the locomotives (address, UID, name), with those in memory.
    E : erase the locomotives in memory (LocoStore); the counter is raised
        and the command station restarts, so that every decoder registers
@@ -385,6 +398,22 @@ static void console()
         }
         else if (c == 'L')
             LocoStore::print();
+        else if (c == 'C')
+        {
+            // Read the configurations again (a decoder changed, or to test
+            // the reading): forgotten, then read as at start-up
+            for (uint8_t a = 1; a < 128; a++)
+                if (Loco *l = Loco::findLoco(a))
+                {
+                    MfxInfo none;
+                    memset(&none, 0, sizeof(none));
+                    l->mfxInfo(none);
+                    sReadTries[a] = 0;
+                }
+            LocoStore::save();
+            sRereadConfigs = true;
+            Serial.println("\nConfigurations forgotten: read again");
+        }
         else if (c == 'E')
         {
             // Forgotten by the command station: the decoders must forget it
@@ -399,7 +428,7 @@ static void console()
         }
         else if (c == '?')
             Serial.printf("\nCommands: R = re-registration of every decoder (counter %u -> %u, restart), "
-                          "V = verify every declared locomotive, L = list the locomotives, "
+                          "V = verify every declared locomotive, L = list the locomotives, C = read the configurations again, "
                           "E = erase the locomotives in memory (counter + 1, restart), ? = help\n",
                           Centrale::counter(), Centrale::counter() + 1);
     }
@@ -416,6 +445,12 @@ void Discovery::task(void *)
     for (;;)
     {
         console();
+        if (sRereadConfigs)
+        {
+            sRereadConfigs = false;
+            configsDone = false;
+            lastConfigs = 0;
+        }
 
         // The configurations are read once the track has been on for
         // POWERED_MS without a break (the decoders must have started),

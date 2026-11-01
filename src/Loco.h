@@ -7,6 +7,7 @@
 struct MfxInfo
 {
   bool valid;
+  bool complete;      // every read succeeded: no need to read it again
   uint8_t av, bv;     // acceleration, braking (x 0.25 s)
   uint8_t vmin, vmax;
   uint16_t tachoMax;  // km/h
