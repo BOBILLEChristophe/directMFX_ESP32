@@ -28,11 +28,12 @@ private:
 
 public:
   Loco(); // Constructeur par défaut : ne modifie aucun état global
-  Loco(uint8_t, String, uint8_t, uint8_t, uint8_t, uint8_t);
+  Loco(uint16_t, String, uint8_t, uint8_t, uint8_t, uint8_t);
 
   uint8_t UID(uint8_t);
-  void addr(uint8_t);
-  uint8_t addr() const;
+  // Rail address (SID): 1 to 16383, chosen by the master
+  void addr(uint16_t);
+  uint16_t addr() const;
   void dir(uint8_t);
   uint8_t dir() const;
   void toggleDir();
@@ -52,10 +53,10 @@ public:
 
   static void addLoco(const Loco &loco);
 
-  static std::unordered_map<uint8_t, Loco> locoMap;
+  static std::unordered_map<uint16_t, Loco> locoMap;
 
   // Renvoie nullptr si aucune loco n'a cette adresse.
-  static Loco *findLoco(uint8_t);
+  static Loco *findLoco(uint16_t);
 
   // UID du décodeur sur 32 bits (UID(0) = octet de poids fort)
   uint32_t uid32() const;
@@ -65,8 +66,8 @@ public:
 
   // Forgets the locomotive at this address (Message::removeLoco() first:
   // the pointers to it become invalid). Returns false if there is none.
-  static bool removeLoco(uint8_t address);
+  static bool removeLoco(uint16_t address);
 
   // Crée la loco, ou remplace celle qui a déjà cette adresse.
-  static Loco *createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3);
+  static Loco *createLoco(uint16_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3);
 };

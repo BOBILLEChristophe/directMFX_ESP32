@@ -64,7 +64,7 @@ public:
     static bool addLoco(Loco *l);
     // Removes the locomotive at this address from the refresh. Returns false
     // if it was not there.
-    static bool removeLoco(uint8_t address);
+    static bool removeLoco(uint16_t address);
     // Prints each command received from Rocrail (speed, direction, functions)
     static void setTrace(bool on) { traceCommands = on; }
     static void decodeMsg(byte *);

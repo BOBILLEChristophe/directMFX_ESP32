@@ -35,7 +35,7 @@ Loco::Loco() : m_addr(0), m_dir(0), m_speed(0), m_name("")
   memset(&m_mfx, 0, sizeof(m_mfx));
 }
 
-Loco::Loco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3)
+Loco::Loco(uint16_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3)
     : m_addr(address),
       m_uid{uid0, uid1, uid2, uid3},
       m_dir(0),
@@ -47,8 +47,8 @@ Loco::Loco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid
 }
 
 byte Loco::UID(byte i) { return i < 4 ? m_uid[i] : 0; }
-void Loco::addr(uint8_t address) { m_addr = address; }
-uint8_t Loco::addr() const { return m_addr; }
+void Loco::addr(uint16_t address) { m_addr = address; }
+uint16_t Loco::addr() const { return m_addr; }
 void Loco::dir(uint8_t dir) { m_dir = dir ? 1 : 0; }
 uint8_t Loco::dir() const { return m_dir; }
 void Loco::toggleDir() { m_dir ^= 1; }
@@ -91,11 +91,18 @@ uint8_t Loco::list(Loco *out, uint8_t max)
 {
   MapLock lock;
   uint8_t n = 0;
-  for (uint16_t a = 0; a < 256 && n < max; a++)
+  for (auto &entry : locoMap)
   {
-    auto it = locoMap.find((uint8_t)a);
-    if (it != locoMap.end())
-      out[n++] = it->second;
+    if (n >= max)
+      break;
+    // Insertion, sorted by address
+    uint8_t i = n++;
+    while (i > 0 && out[i - 1].addr() > entry.second.addr())
+    {
+      out[i] = out[i - 1];
+      i--;
+    }
+    out[i] = entry.second;
   }
   return n;
 }
@@ -121,26 +128,26 @@ Loco *Loco::findByUid(uint32_t uid)
 }
 
 // Utilisation d'un unordered_map pour stocker les locomotives en fonction de leur adresse
-std::unordered_map<uint8_t, Loco> Loco::locoMap;
+std::unordered_map<uint16_t, Loco> Loco::locoMap;
 
 // Recherche d'une locomotive par son adresse.
 // Une loco inconnue n'est plus créée : elle n'aurait jamais été rafraîchie
 // (absente du tableau parcouru par Message::periodic) et sa création modifiait
 // le compteur de réinscription.
-Loco *Loco::findLoco(uint8_t address)
+Loco *Loco::findLoco(uint16_t address)
 {
   MapLock lock;
   auto it = locoMap.find(address);
   return it == locoMap.end() ? nullptr : &it->second;
 }
 
-bool Loco::removeLoco(uint8_t address)
+bool Loco::removeLoco(uint16_t address)
 {
   MapLock lock;
   return locoMap.erase(address) > 0;
 }
 
-Loco *Loco::createLoco(uint8_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3)
+Loco *Loco::createLoco(uint16_t address, String name, uint8_t uid0, uint8_t uid1, uint8_t uid2, uint8_t uid3)
 {
   Loco loco(address, name, uid0, uid1, uid2, uid3);
   MapLock lock;

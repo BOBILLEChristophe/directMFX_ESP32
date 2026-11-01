@@ -10,13 +10,23 @@
 #include <Preferences.h>
 
 static const char *NVS_NAMESPACE = "locos";
-static const char *NVS_KEY = "list2";
-static const char *NVS_KEY_V1 = "list"; // first layout (October 2026), without the configuration
+static const char *NVS_KEY = "list3";    // addresses on 16 bits (given by a master: Rocrail, MS2)
+static const char *NVS_KEY_V2 = "list2"; // addresses on 8 bits (1 Nov 2026)
+static const char *NVS_KEY_V1 = "list";  // first layout (October 2026), without the configuration
 static const uint8_t MAX_STORED = 32;
 
 // One record per locomotive. The layout is part of the stored data: a
 // change needs a new key (or the old memory is read as garbage).
 struct __attribute__((packed)) Record
+{
+    uint16_t addr;
+    uint8_t uid[4];
+    char name[17];
+    uint8_t info[sizeof(MfxInfo)]; // configuration read in the decoder (MfxInfo)
+};
+
+// Second layout: address on 8 bits
+struct __attribute__((packed)) RecordV2
 {
     uint8_t addr;
     uint8_t uid[4];
@@ -47,6 +57,23 @@ static uint8_t readRecords(Record *out, uint8_t max)
         {
             prefs.getBytes(NVS_KEY, out, len);
             n = (uint8_t)(len / sizeof(Record));
+        }
+    }
+    else if (prefs.isKey(NVS_KEY_V2))
+    {
+        static RecordV2 old[MAX_STORED];
+        const size_t len = prefs.getBytesLength(NVS_KEY_V2);
+        if (len > 0 && len % sizeof(RecordV2) == 0 && len / sizeof(RecordV2) <= max && len <= sizeof(old))
+        {
+            prefs.getBytes(NVS_KEY_V2, old, len);
+            n = (uint8_t)(len / sizeof(RecordV2));
+            for (uint8_t i = 0; i < n; i++)
+            {
+                out[i].addr = old[i].addr;
+                memcpy(out[i].uid, old[i].uid, 4);
+                memcpy(out[i].name, old[i].name, sizeof(old[i].name));
+                memcpy(out[i].info, old[i].info, sizeof(old[i].info));
+            }
         }
     }
     else if (prefs.isKey(NVS_KEY_V1))
@@ -95,12 +122,12 @@ void LocoStore::load()
                 declared->mfxInfo(info);
             continue;
         }
-        uint8_t address = r.addr;
-        if (address == 0 || address > 127 || Loco::findLoco(address) != nullptr)
+        uint16_t address = r.addr;
+        if (address == 0 || address > 16383 || Loco::findLoco(address) != nullptr)
         {
             // Address taken by main.cpp: the first free one
             address = 0;
-            for (uint8_t a = 1; a < 128; a++)
+            for (uint16_t a = 1; a < 128; a++)
                 if (Loco::findLoco(a) == nullptr)
                 {
                     address = a;
@@ -152,6 +179,8 @@ void LocoStore::save()
         prefs.putBytes(NVS_KEY, records, n * sizeof(Record));
         if (prefs.isKey(NVS_KEY_V1))
             prefs.remove(NVS_KEY_V1); // now in the new layout
+        if (prefs.isKey(NVS_KEY_V2))
+            prefs.remove(NVS_KEY_V2);
         prefs.end();
     }
 }
@@ -171,7 +200,7 @@ void LocoStore::print()
             if (uidOf(records[k]) == uid)
                 inMemory = true;
         const MfxInfo info = copies[i].mfxInfo();
-        Serial.printf("  address %3u  UID %08lX  %-16s  configuration %s%s\n", copies[i].addr(), (unsigned long)uid,
+        Serial.printf("  address %5u  UID %08lX  %-16s  configuration %s%s\n", copies[i].addr(), (unsigned long)uid,
                       copies[i].name().c_str(),
                       info.complete ? "read" : (info.valid ? "incomplete" : "not read"),
                       inMemory ? "" : "  (main.cpp only)");
@@ -187,6 +216,8 @@ void LocoStore::erase()
             prefs.remove(NVS_KEY);
         if (prefs.isKey(NVS_KEY_V1))
             prefs.remove(NVS_KEY_V1);
+        if (prefs.isKey(NVS_KEY_V2))
+            prefs.remove(NVS_KEY_V2);
         prefs.end();
     }
 }

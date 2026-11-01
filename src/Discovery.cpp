@@ -13,6 +13,17 @@
 #include "MfxConfig.h"
 #include "Cs2Config.h"
 #include "LocoStore.h"
+#include <unordered_map>
+
+// Addresses of the known locomotives, sorted (at most max)
+static uint8_t knownAddresses(uint16_t *out, uint8_t max)
+{
+    static Loco copies[32];
+    const uint8_t n = Loco::list(copies, max < 32 ? max : 32);
+    for (uint8_t i = 0; i < n; i++)
+        out[i] = copies[i].addr();
+    return n;
+}
 
 static const uint32_t PERIOD_MS = 2000;        // search for new decoders
 static const uint32_t SAME_DECODER_MS = 30000; // pause if a decoder answers again
@@ -225,15 +236,18 @@ bool Discovery::readConfig(uint16_t sid, char *nameOut, size_t size)
  Returns true when nothing is left to try.
 */
 static const uint8_t READ_TRIES = 3;
-static uint8_t sReadTries[128]; // tries per address, READ_TRIES + 1 once read
+static std::unordered_map<uint16_t, uint8_t> sReadTries; // tries per address, READ_TRIES once read
 static volatile bool sRereadConfigs = false; // serial command C
 static volatile bool sConfigPending = false; // a new decoder not read completely
 
 bool Discovery::readDeclaredConfigs()
 {
     bool left = false;
-    for (uint8_t a = 1; a < 128; a++)
+    uint16_t list[32];
+    const uint8_t count = knownAddresses(list, 32);
+    for (uint8_t i = 0; i < count; i++)
     {
+        const uint16_t a = list[i];
         Loco *l = Loco::findLoco(a);
         if (l == nullptr || sReadTries[a] >= READ_TRIES)
             continue;
@@ -332,8 +346,8 @@ void Discovery::registerDecoder(uint32_t uid)
         return;
     }
 
-    uint8_t address = 0;
-    for (uint8_t a = 1; a < 128; a++)
+    uint16_t address = 0;
+    for (uint16_t a = 1; a < 128; a++)
         if (Loco::findLoco(a) == nullptr)
         {
             address = a;
@@ -404,8 +418,11 @@ void Discovery::registerDecoder(uint32_t uid)
 */
 static void verifyAll()
 {
-    for (uint8_t a = 1; a < 128; a++)
+    uint16_t list[32];
+    const uint8_t count = knownAddresses(list, 32);
+    for (uint8_t i = 0; i < count; i++)
     {
+        const uint16_t a = list[i];
         Loco *l = Loco::findLoco(a);
         if (l == nullptr)
             continue;
@@ -423,9 +440,13 @@ static void verifyAll()
 }
 
 // Presence of each locomotive (verifyNext())
-static bool sAbsent[128];
-static uint8_t sMisses[128];
-static TickType_t sAbsentSince[128];
+struct Presence
+{
+    bool absent;
+    uint8_t misses;
+    TickType_t since;
+};
+static std::unordered_map<uint16_t, Presence> sPresence; // by address
 
 /*
  Deletes a locomotive, as the MS2 does (1 Nov, Gleisbox capture: "addr 11 |
@@ -435,7 +456,7 @@ static TickType_t sAbsentSince[128];
  search again and is registered as a new locomotive (address, configuration,
  name), exactly as on an MS2.
 */
-static void deleteLoco(uint8_t a)
+static void deleteLoco(uint16_t a)
 {
     Loco *l = Loco::findLoco(a);
     if (l == nullptr)
@@ -457,9 +478,8 @@ static void deleteLoco(uint8_t a)
         }
     Message::removeLoco(a);
     Loco::removeLoco(a);
-    sAbsent[a] = false;
-    sMisses[a] = 0;
-    sReadTries[a] = 0;
+    sPresence.erase(a);
+    sReadTries.erase(a);
     LocoStore::save();
     Serial.printf("\nDeleted: %s (UID %08lX) at address %u%s. Delete it in Rocrail too.\n", name.c_str(),
                   (unsigned long)uid, a,
@@ -493,9 +513,12 @@ static void console()
         {
             // Read the configurations again (a decoder changed, or to test
             // the reading): forgotten, then read as at start-up
-            for (uint8_t a = 1; a < 128; a++)
-                if (Loco *l = Loco::findLoco(a))
+            uint16_t list[32];
+            const uint8_t count = knownAddresses(list, 32);
+            for (uint8_t i = 0; i < count; i++)
+                if (Loco *l = Loco::findLoco(list[i]))
                 {
+                    const uint16_t a = list[i];
                     MfxInfo none;
                     memset(&none, 0, sizeof(none));
                     l->mfxInfo(none);
@@ -528,10 +551,10 @@ static void console()
                 a = a * 10 + (Serial.read() - '0');
                 digits = true;
             }
-            if (!digits || a < 1 || a > 127)
-                Serial.println("\nDelete: D followed by the address (1 to 127), D4 for example");
+            if (!digits || a < 1 || a > 16383)
+                Serial.println("\nDelete: D followed by the address (1 to 16383), D4 for example");
             else
-                deleteLoco((uint8_t)a);
+                deleteLoco(a);
         }
         else if (c == '?')
             Serial.printf("\nCommands: R = re-registration of every decoder (counter %u -> %u, restart), "
@@ -562,16 +585,22 @@ static const uint16_t WEAK_ANSWER_REGULAR = 20;
 
 static void verifyNext()
 {
-    static uint8_t next = 1;
+    static uint16_t last = 0; // address queried last time: the next one follows
     const TickType_t now = xTaskGetTickCount();
-    for (uint8_t k = 0; k < 127; k++)
+    uint16_t list[32];
+    const uint8_t count = knownAddresses(list, 32);
+    uint8_t start = 0;
+    while (start < count && list[start] <= last)
+        start++;
+    for (uint8_t k = 0; k < count; k++)
     {
-        const uint8_t a = next;
-        next = next % 127 + 1;
+        const uint16_t a = list[(start + k) % count];
+        last = a;
         Loco *l = Loco::findLoco(a);
         if (l == nullptr)
             continue;
-        if (sAbsent[a] && now - sAbsentSince[a] < pdMS_TO_TICKS(ABSENT_RETRY_MS))
+        Presence &p = sPresence[a];
+        if (p.absent && now - p.since < pdMS_TO_TICKS(ABSENT_RETRY_MS))
             continue; // queried again later
         MfxFrame f;
         f.address(a);
@@ -584,20 +613,20 @@ static void verifyNext()
         const bool yes = Feedback::ask(f, &r) || r.windowRegular >= WEAK_ANSWER_REGULAR;
         if (yes)
         {
-            if (sAbsent[a])
+            if (p.absent)
                 Serial.printf("Discovery: %s (address %u) is on the track\n", l->name().c_str(), a);
-            sAbsent[a] = false;
-            sMisses[a] = 0;
+            p.absent = false;
+            p.misses = 0;
             vTaskDelay(pdMS_TO_TICKS(ANSWER_PAUSE_MS));
         }
-        else if (sAbsent[a])
-            sAbsentSince[a] = now;
-        else if (++sMisses[a] >= ABSENT_MISSES)
+        else if (p.absent)
+            p.since = now;
+        else if (++p.misses >= ABSENT_MISSES)
         {
             Serial.printf("Discovery: %s (address %u) does not answer, queried again every minute\n",
                           l->name().c_str(), a);
-            sAbsent[a] = true;
-            sAbsentSince[a] = now;
+            p.absent = true;
+            p.since = now;
         }
         return;
     }
@@ -644,7 +673,7 @@ static Loco *locoAt(uint32_t uid, uint16_t sid)
     String name = l != nullptr ? l->name() : String("mfx ") + String(uid, HEX);
     if (l != nullptr)
     {
-        const uint8_t old = l->addr();
+        const uint16_t old = l->addr();
         Message::removeLoco(old);
         Loco::removeLoco(old);
     }
@@ -668,9 +697,9 @@ void Discovery::masterOrders()
     {
         const uint8_t d[7] = {(uint8_t)(o.uid >> 24), (uint8_t)(o.uid >> 16), (uint8_t)(o.uid >> 8), (uint8_t)o.uid,
                               (uint8_t)(o.sid >> 8), (uint8_t)o.sid, 0xFF};
-        if (o.sid == 0 || o.sid > 255)
+        if (o.sid > 16383 || (o.sid == 0 && o.uid != 0))
         {
-            Serial.printf("Discovery: SID %u not handled (1 to 255)\n", o.sid);
+            Serial.printf("Discovery: SID %u not valid (1 to 16383)\n", o.sid);
             continue;
         }
         if (o.type == 2)

@@ -65,7 +65,7 @@ bool Message::addLoco(Loco *l)
     return added;
 }
 
-bool Message::removeLoco(uint8_t address)
+bool Message::removeLoco(uint16_t address)
 {
     bool removed = false;
     if (xSemaphoreTake(taskSemaphore, portMAX_DELAY) == pdTRUE)
@@ -347,7 +347,10 @@ void Message::parse()
         return;
     }
 
-    const uint8_t address = data[3];
+    // CS2 locomotive identifier: mfx from 0x4000 (0x4000 + SID), else the
+    // low byte as before (MM2)
+    const uint16_t locId = (uint16_t)data[2] << 8 | data[3];
+    const uint16_t address = (locId >= 0x4000 && locId < 0x8000) ? locId - 0x4000 : data[3];
     Loco *currentLoco = Loco::findLoco(address);
     if (currentLoco == nullptr)
     {
